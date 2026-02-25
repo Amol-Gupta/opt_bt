@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Backtest Report Schema",
+  "type": "object",
+  "properties": {
+    "reproducibility": {
+      "type": "object",
+      "description": "Metadata required to reproduce this exact backtest result",
+      "properties": {
+        "engine_version": { "type": "string", "description": "Git commit hash or release tag of the backtesting engine" },
+        "strategy_version": { "type": "string", "description": "Git commit hash or release tag of the strategy code" },
+        "strategy_name": { "type": "string" },
+        "parameters": { "type": "object", "description": "All strategy parameter values used", "additionalProperties": true },
+        "config": { "type": "object", "description": "Complete engine configuration state (slippage model, fill logic, etc.)", "additionalProperties": true },
+        "dataset": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string", "description": "Data source identifier (e.g., nse-options-2023)" },
+            "sha256": { "type": "string", "description": "SHA256 checksum of the Parquet file(s)" },
+            "granularity": { "type": "string", "description": "Bar granularity (e.g., 1min)" },
+            "start_date": { "type": "string", "format": "date" },
+            "end_date": { "type": "string", "format": "date" }
+          },
+          "required": ["sha256", "start_date", "end_date"]
+        }
+      },
+      "required": ["engine_version", "parameters", "dataset"]
+    },
+    "simulation": {
+      "type": "object",
+      "properties": {
+        "start_time": { "type": "string", "format": "date-time" },
+        "end_time": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "number" },
+        "instrument_count": { "type": "integer" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "total_return_pct": { "type": "number" },
+        "cagr_pct": { "type": "number" },
+        "sharpe_ratio": { "type": "number", "description": "Annualized Sharpe Ratio (risk-free rate: 5%)" },
+        "sortino_ratio": { "type": "number", "description": "Annualized Sortino Ratio (risk-free rate: 5%)" },
+        "max_drawdown_pct": { "type": "number" },
+        "trade_count": { "type": "integer" },
+        "win_rate_pct": { "type": "number" },
+        "profit_factor": { "type": "number", "description": "Gross Profit / Gross Loss" },
+        "margin_utilization_pct": { "type": "number" },
+        "final_cash_balance": { "type": "number" }
+      },
+      "required": ["total_return_pct", "max_drawdown_pct", "sharpe_ratio"]
+    },
+    "trades": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "side": { "type": "string", "enum": ["Buy", "Sell"] },
+          "entry_time": { "type": "string", "format": "date-time" },
+          "exit_time": { "type": "string", "format": "date-time" },
+          "qty": { "type": "integer" },
+          "entry_price": { "type": "number" },
+          "exit_price": { "type": "number" },
+          "pnl": { "type": "number" },
+          "stale_fill": { "type": "boolean", "description": "True if this trade was filled against stale data (FR-009)" }
+        },
+        "required": ["id", "symbol", "side", "qty", "pnl"]
+      }
+    },
+    "equity_curve": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "integer" },
+          "equity": { "type": "number" },
+          "drawdown_pct": { "type": "number" }
+        },
+        "required": ["timestamp", "equity"]
+      }
+    }
+  },
+  "required": ["reproducibility", "simulation", "metrics", "trades", "equity_curve"]
+}

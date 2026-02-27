@@ -1,0 +1,20 @@
+[project]
+name = "my_strategy"
+
+[engine]
+path = "/home/amol/opt_bt"
+bin = "opt_bt"
+
+[run]
+default_strategy = "my_strategy"
+data = "./sample_data/niftyIndex2024.sample.parquet"
+log_time_mode = "simulation"
+initial_capital = 1000000
+
+[run.params]
+prob = "0.5"
+qty = "1"
+seed = "42"
+
+[strategy_registry]
+stage1_fallback = true

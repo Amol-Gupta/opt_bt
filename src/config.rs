@@ -33,14 +33,82 @@ pub struct Config {
     #[arg(long, default_value = "info")]
     pub log_level: String,
 
+    /// Logger time mode (simulation, wall)
+    #[arg(long, default_value = "simulation")]
+    pub log_time_mode: String,
+
+    /// Optional log file path for engine logger output
+    #[arg(long)]
+    pub log_file: Option<String>,
+
+    /// Optional report output file path (JSON)
+    #[arg(long)]
+    pub report_path: Option<String>,
+
     /// Strategy parameters (key=value)
     #[arg(long, value_parser = parse_key_val)]
     pub params: Option<Vec<(String, String)>>,
+
+    /// Strategy kind for single-strategy mode (e.g. random, atm_straddle)
+    #[arg(long)]
+    pub strategy: Option<String>,
+
+    /// Optional portfolio composition loaded from JSON config.
+    #[serde(default)]
+    #[arg(skip)]
+    pub portfolio: Option<PortfolioConfig>,
+
+    /// Optional option-chain filter criteria for daily instrument subscription.
+    #[serde(default)]
+    #[arg(skip)]
+    pub option_filter: Option<OptionFilterConfig>,
     
     // Internal use: computed or merged parameters
     #[serde(skip)]
     #[arg(skip)]
     pub merged_params: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortfolioConfig {
+    pub strategies: Vec<StrategyConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyConfig {
+    pub id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub params: HashMap<String, String>,
+    pub capital_limit: Option<i64>,
+    pub max_exposure_ratio: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OptionFilterConfig {
+    pub underlying: String,
+    #[serde(default)]
+    pub nearest_expiry_only: bool,
+    #[serde(default)]
+    pub min_days_to_expiry: Option<i32>,
+    #[serde(default)]
+    pub max_days_to_expiry: Option<i32>,
+    #[serde(default)]
+    pub strike_step: Option<i64>,
+    #[serde(default)]
+    pub strike_band_steps: Option<i32>,
+    #[serde(default = "default_include_calls")]
+    pub include_calls: bool,
+    #[serde(default = "default_include_puts")]
+    pub include_puts: bool,
+}
+
+fn default_include_calls() -> bool {
+    true
+}
+
+fn default_include_puts() -> bool {
+    true
 }
 
 /// Parse a single key-value pair
@@ -68,6 +136,7 @@ impl Config {
                 if cli_config.data_dir.is_none() { cli_config.data_dir = file_config.data_dir; }
                 if cli_config.start_date.is_none() { cli_config.start_date = file_config.start_date; }
                 if cli_config.end_date.is_none() { cli_config.end_date = file_config.end_date; }
+                if cli_config.option_filter.is_none() { cli_config.option_filter = file_config.option_filter; }
                 // For params, we might want to merge map
             }
         }
@@ -82,6 +151,63 @@ impl Config {
         cli_config.merged_params = final_params;
 
         Ok(cli_config)
+    }
+
+    /// Merge optional config_file values into this config, keeping explicit CLI values as highest priority.
+    pub fn resolve(mut self) -> Result<Self> {
+        if let Some(path) = &self.config_file {
+            if Path::new(path).exists() {
+                let content = fs::read_to_string(path)?;
+                let file_config: Config = serde_json::from_str(&content)?;
+
+                if self.data_dir.is_none() {
+                    self.data_dir = file_config.data_dir;
+                }
+                if self.start_date.is_none() {
+                    self.start_date = file_config.start_date;
+                }
+                if self.end_date.is_none() {
+                    self.end_date = file_config.end_date;
+                }
+                if self.strategy.is_none() {
+                    self.strategy = file_config.strategy;
+                }
+                if self.portfolio.is_none() {
+                    self.portfolio = file_config.portfolio;
+                }
+                if self.option_filter.is_none() {
+                    self.option_filter = file_config.option_filter;
+                }
+                if self.params.is_none() {
+                    self.params = file_config.params;
+                }
+                if self.initial_capital == 1_000_000 {
+                    self.initial_capital = file_config.initial_capital;
+                }
+                if self.log_level == "info" {
+                    self.log_level = file_config.log_level;
+                }
+                if self.log_time_mode == "simulation" {
+                    self.log_time_mode = file_config.log_time_mode;
+                }
+                if self.log_file.is_none() {
+                    self.log_file = file_config.log_file;
+                }
+                if self.report_path.is_none() {
+                    self.report_path = file_config.report_path;
+                }
+            }
+        }
+
+        let mut final_params = HashMap::new();
+        if let Some(params) = &self.params {
+            for (key, value) in params {
+                final_params.insert(key.clone(), value.clone());
+            }
+        }
+        self.merged_params = final_params;
+
+        Ok(self)
     }
 }
 
@@ -167,7 +293,13 @@ mod tests {
             end_date: None,
             initial_capital: 100000,
             log_level: "info".to_string(),
+            log_time_mode: "simulation".to_string(),
+            log_file: None,
+            report_path: None,
             params: None,
+            strategy: None,
+            portfolio: None,
+            option_filter: None,
             merged_params: HashMap::new(),
         };
         base.merged_params.insert("p1".to_string(), "base".to_string());

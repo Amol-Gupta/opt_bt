@@ -3,7 +3,22 @@ use serde::{Deserialize, Serialize};
 /// Price is represented as scaled integer (i64) with factor 10,000.
 /// e.g. 150.50 -> 1,505,000
 pub type Price = i64;
+pub type InstrumentId = u32;
 pub const PRICE_SCALE: i64 = 10_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OptionType {
+    Call,
+    Put,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum InstrumentKind {
+    Spot,
+    Future,
+    Option,
+    Unknown,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Side {

@@ -1,8 +1,6 @@
-use crate::common::types::{OrderType, Side, Status, Price};
-use crate::common::event::{OrderEvent, FillEvent, MarketEvent};
-use crate::data::models::Bar;
+use crate::common::types::{OrderType, Side, Status};
+use crate::common::event::{OrderEvent, FillEvent};
 use crate::data::models::MarketData;
-use std::sync::Arc;
 
 pub trait FillModel {
     fn fill_order(&mut self, order: &OrderEvent, market_data: &MarketData) -> Option<FillEvent>;
@@ -223,7 +221,7 @@ impl FillModel for DefaultFillModel {
 mod tests {
     use super::*;
     use crate::data::models::{Bar, MarketData};
-    use crate::common::types::{OrderType, Side, Status, PRICE_SCALE};
+    use crate::common::types::{OrderType, Side, Status};
 
     #[test]
     fn test_fill_market_order() {

@@ -2,15 +2,25 @@ use serde::Serialize;
 use std::collections::HashMap;
 use crate::engine::runner::Engine;
 use crate::strategy::Strategy;
-use crate::common::types::{Side, Price, PRICE_SCALE};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use crate::common::types::PRICE_SCALE;
+use crate::portfolio::manager::StrategyAttribution;
+use crate::reporting::metrics::calculate_metrics;
+use crate::reporting::post_analysis::{
+    default_stress_scenarios, run_post_analysis, FlatRateTaxModel, PostAnalysisSummary,
+};
+use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
+use chrono::{DateTime, Utc};
 
 #[derive(Serialize, Debug, Clone)]
 pub struct BacktestReport {
     pub reproducibility: Reproducibility,
     pub simulation: Simulation,
     pub metrics: Metrics,
+    pub post_analysis: PostAnalysisSummary,
+    pub portfolio: PortfolioView,
+    pub strategy_attribution: HashMap<String, StrategyAttributionRecord>,
     pub trades: Vec<TradeRecord>,
+    pub warnings: Vec<String>,
     // pub equity_curve: Vec<EquityPoint>, // Commented out for now
 }
 
@@ -58,6 +68,7 @@ pub struct Metrics {
 #[derive(Serialize, Debug, Clone)]
 pub struct TradeRecord {
     pub id: u64,
+    pub strategy_id: String,
     pub symbol: String, // Need lookup from instrument_id
     pub side: String,   // "Buy" or "Sell" (usually Entry side)
     pub entry_time: String,
@@ -70,6 +81,14 @@ pub struct TradeRecord {
 }
 
 #[derive(Serialize, Debug, Clone)]
+pub struct StrategyAttributionRecord {
+    pub trade_count: u64,
+    pub realized_pnl: f64,
+    pub fees_paid: f64,
+    pub gross_notional: f64,
+}
+
+#[derive(Serialize, Debug, Clone)]
 pub struct EquityPoint {
     pub timestamp: i64,
     pub equity: f64,
@@ -79,47 +98,62 @@ pub struct EquityPoint {
 fn format_timestamp(ts: i64) -> String {
     // Assuming ts is seconds? Or millis?
     // Bar timestamp usually seconds.
-    if let Some(ndt) = NaiveDateTime::from_timestamp_opt(ts, 0) {
-        return DateTime::<Utc>::from_utc(ndt, Utc).to_rfc3339();
+    if let Some(dt) = DateTime::<Utc>::from_timestamp(ts, 0) {
+        return dt.to_rfc3339();
     }
     ts.to_string()
 }
 
 pub fn generate_report<S: Strategy>(engine: &Engine<S>) -> BacktestReport {
-    let final_equity = engine.context.account.equity(&HashMap::new()); 
-    
+    generate_report_with_reproducibility(engine, None)
+}
+
+pub fn generate_report_with_reproducibility<S: Strategy>(
+    engine: &Engine<S>,
+    reproducibility: Option<Reproducibility>,
+) -> BacktestReport {
     // Trade reconstruction (FIFO)
     let trades = reconstruct_trades(&engine.context.account.trades, &engine.market_data);
-    
-    // Metrics calculation (Stubbed for now)
+    let strategy_attribution = reconstruct_strategy_attribution(&engine.context.account.strategy_attribution);
+    let computed_metrics = calculate_metrics(&engine.context.account, &engine.context.account.trades);
     let metrics = Metrics {
-        total_return_pct: 0.0,
-        cagr_pct: 0.0,
-        sharpe_ratio: 0.0,
-        sortino_ratio: 0.0,
-        max_drawdown_pct: 0.0,
-        trade_count: trades.len() as u64,
-        win_rate_pct: 0.0,
-        profit_factor: 0.0,
-        margin_utilization_pct: 0.0,
-        final_cash_balance: (engine.context.account.cash as f64) / (PRICE_SCALE as f64),
+        total_return_pct: computed_metrics.total_return_pct,
+        cagr_pct: computed_metrics.cagr_pct,
+        sharpe_ratio: computed_metrics.sharpe_ratio,
+        sortino_ratio: computed_metrics.sortino_ratio,
+        max_drawdown_pct: computed_metrics.max_drawdown_pct,
+        trade_count: computed_metrics.trade_count,
+        win_rate_pct: computed_metrics.win_rate_pct,
+        profit_factor: computed_metrics.profit_factor,
+        margin_utilization_pct: computed_metrics.margin_utilization_pct,
+        final_cash_balance: computed_metrics.final_cash_balance,
     };
+    let tax_model = FlatRateTaxModel::new("flat_rate_0pct", 0.0);
+    let post_analysis = run_post_analysis(
+        &engine.context.account,
+        &engine.context.account.trades,
+        &tax_model,
+        &default_stress_scenarios(),
+    );
+    let portfolio = build_portfolio_view(&engine.context.account);
+
+    let reproducibility = reproducibility.unwrap_or_else(|| Reproducibility {
+        engine_version: env!("CARGO_PKG_VERSION").to_string(),
+        strategy_version: "unknown".to_string(),
+        strategy_name: "Strategy".to_string(),
+        parameters: HashMap::new(),
+        config: HashMap::new(),
+        dataset: DatasetMetadata {
+            source: "unknown".to_string(),
+            sha256: "unknown".to_string(),
+            granularity: "unknown".to_string(),
+            start_date: "unknown".to_string(),
+            end_date: "unknown".to_string(),
+        },
+    });
 
     BacktestReport {
-        reproducibility: Reproducibility {
-            engine_version: "v0.1.0".to_string(),
-            strategy_version: "unknown".to_string(),
-            strategy_name: "Strategy".to_string(),
-            parameters: HashMap::new(),
-            config: HashMap::new(),
-            dataset: DatasetMetadata {
-                source: "unknown".to_string(),
-                sha256: "unknown".to_string(),
-                granularity: "unknown".to_string(),
-                start_date: "unknown".to_string(),
-                end_date: "unknown".to_string(),
-            },
-        },
+        reproducibility,
         simulation: Simulation {
             start_time: "unknown".to_string(),
             end_time: "unknown".to_string(),
@@ -127,7 +161,11 @@ pub fn generate_report<S: Strategy>(engine: &Engine<S>) -> BacktestReport {
             instrument_count: engine.market_data.instruments.len() as u32,
         },
         metrics,
+        post_analysis,
+        portfolio,
+        strategy_attribution,
         trades,
+        warnings: engine.context.warnings.clone(),
     }
 }
 
@@ -141,6 +179,7 @@ fn reconstruct_trades(raw_trades: &[crate::portfolio::models::Trade], market_dat
         // Let's just create a record for every trade for now (incorrect but compiles).
         closed_trades.push(TradeRecord {
             id: trade.id,
+            strategy_id: trade.strategy_id.clone(),
             symbol,
             side: format!("{:?}", trade.side),
             entry_time: format_timestamp(trade.timestamp), 
@@ -154,4 +193,22 @@ fn reconstruct_trades(raw_trades: &[crate::portfolio::models::Trade], market_dat
     }
     
     closed_trades
+}
+
+fn reconstruct_strategy_attribution(
+    raw: &HashMap<String, StrategyAttribution>,
+) -> HashMap<String, StrategyAttributionRecord> {
+    raw.iter()
+        .map(|(strategy_id, attribution)| {
+            (
+                strategy_id.clone(),
+                StrategyAttributionRecord {
+                    trade_count: attribution.trade_count,
+                    realized_pnl: (attribution.realized_pnl as f64) / (PRICE_SCALE as f64),
+                    fees_paid: (attribution.fees_paid as f64) / (PRICE_SCALE as f64),
+                    gross_notional: (attribution.gross_notional as f64) / (PRICE_SCALE as f64),
+                },
+            )
+        })
+        .collect()
 }

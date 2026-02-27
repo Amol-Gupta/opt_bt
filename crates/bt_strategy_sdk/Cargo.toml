@@ -1,0 +1,8 @@
+[package]
+name = "bt_strategy_sdk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inventory = "0.3"
+serde = { version = "1", features = ["derive"] }

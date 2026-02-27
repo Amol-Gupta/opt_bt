@@ -11,6 +11,18 @@ Cargo.lock
 .idea/
 .DS_Store
 Thumbs.db
+debug/
+release/
+*.rlib
+*.prof*
+*.tmp
+*.swp
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
 
 
 # Added by cargo

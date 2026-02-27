@@ -19,6 +19,7 @@ pub struct Order {
 pub struct Trade {
     pub id: u64,
     pub order_id: u64,
+    pub strategy_id: String,
     pub instrument_id: u32,
     pub side: Side,
     pub quantity: i64,
@@ -131,20 +132,20 @@ mod tests {
         let mut pos = Position::new(1);
         
         // Buy 10 @ 100
-        let t1 = Trade { id: 1, order_id: 1, instrument_id: 1, side: Side::Buy, quantity: 10, price: 100, timestamp: 1, fee: 0 };
+        let t1 = Trade { id: 1, order_id: 1, strategy_id: "test".to_string(), instrument_id: 1, side: Side::Buy, quantity: 10, price: 100, timestamp: 1, fee: 0 };
         pos.update(&t1);
         assert_eq!(pos.quantity, 10);
         assert_eq!(pos.avg_cost, 100);
         assert_eq!(pos.realized_pnl, 0);
         
         // Buy 10 @ 120 -> Avg cost 110, Qty 20
-        let t2 = Trade { id: 2, order_id: 2, instrument_id: 1, side: Side::Buy, quantity: 10, price: 120, timestamp: 2, fee: 0 };
+        let t2 = Trade { id: 2, order_id: 2, strategy_id: "test".to_string(), instrument_id: 1, side: Side::Buy, quantity: 10, price: 120, timestamp: 2, fee: 0 };
         pos.update(&t2);
         assert_eq!(pos.quantity, 20);
         assert_eq!(pos.avg_cost, 110);
         
         // Sell 10 @ 130 -> PnL (130-110)*10 = 200. Qty 10. AvgCost 110.
-        let t3 = Trade { id: 3, order_id: 3, instrument_id: 1, side: Side::Sell, quantity: 10, price: 130, timestamp: 3, fee: 0 };
+        let t3 = Trade { id: 3, order_id: 3, strategy_id: "test".to_string(), instrument_id: 1, side: Side::Sell, quantity: 10, price: 130, timestamp: 3, fee: 0 };
         pos.update(&t3);
         assert_eq!(pos.quantity, 10);
         assert_eq!(pos.avg_cost, 110); // FIFO/Average Cost accounting? Usually Average Cost implies cost basis doesn't change on reduction.
@@ -153,7 +154,7 @@ mod tests {
         // Sell 20 @ 100 -> Flip to Short 10.
         // Close 10 (Long) @ 100. PnL (100-110)*10 = -100. Total PnL 200 - 100 = 100.
         // Open 10 (Short) @ 100. AvgCost 100. Qty -10.
-        let t4 = Trade { id: 4, order_id: 4, instrument_id: 1, side: Side::Sell, quantity: 20, price: 100, timestamp: 4, fee: 0 };
+        let t4 = Trade { id: 4, order_id: 4, strategy_id: "test".to_string(), instrument_id: 1, side: Side::Sell, quantity: 20, price: 100, timestamp: 4, fee: 0 };
         pos.update(&t4);
         assert_eq!(pos.quantity, -10);
         assert_eq!(pos.avg_cost, 100);

@@ -1,9 +1,11 @@
 use opt_bt::data::models::{MarketData, Bar};
 use opt_bt::strategy::examples::RandomStrategy;
+use opt_bt::strategy::Strategy;
+use opt_bt::common::context::Context;
+use opt_bt::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 #[test]
 fn test_single_strategy_run() {
@@ -64,4 +66,65 @@ fn test_single_strategy_run() {
     
     // Check if we didn't crash and money changed
     assert_ne!(report.metrics.final_cash_balance, 1_000_000.0);
+}
+
+struct DayHookStrategy {
+    pub before_open_count: usize,
+    pub after_close_count: usize,
+}
+
+impl DayHookStrategy {
+    fn new() -> Self {
+        Self {
+            before_open_count: 0,
+            after_close_count: 0,
+        }
+    }
+}
+
+impl Strategy for DayHookStrategy {
+    fn before_open(&mut self, _ctx: &mut Context) {
+        self.before_open_count += 1;
+    }
+
+    fn after_close(&mut self, _ctx: &mut Context) {
+        self.after_close_count += 1;
+    }
+
+    fn on_market_event(&mut self, _ctx: &mut Context, _event: &MarketEvent) {}
+    fn on_signal(&mut self, _ctx: &mut Context, _event: &SignalEvent) {}
+    fn on_order_event(&mut self, _ctx: &mut Context, _event: &OrderEvent) {}
+    fn on_fill(&mut self, _ctx: &mut Context, _event: &FillEvent) {}
+}
+
+#[test]
+fn test_day_open_close_hooks_once_per_day() {
+    let mut market_data = MarketData::new();
+    let symbol = "NIFTY24APR22000CE";
+
+    market_data.add_bar(symbol, Bar {
+        timestamp: 1_700_000_000,
+        open: 1_000_000,
+        high: 1_001_000,
+        low: 999_000,
+        close: 1_000_500,
+        volume: 100,
+    });
+    market_data.add_bar(symbol, Bar {
+        timestamp: 1_700_000_000 + 86_400,
+        open: 1_000_000,
+        high: 1_001_000,
+        low: 999_000,
+        close: 1_000_500,
+        volume: 100,
+    });
+
+    let strategy = DayHookStrategy::new();
+    let mut engine = Engine::new(strategy, Arc::new(market_data), 1_000_000 * 10_000);
+
+    engine.init();
+    engine.run();
+
+    assert_eq!(engine.strategy.before_open_count, 2);
+    assert_eq!(engine.strategy.after_close_count, 2);
 }

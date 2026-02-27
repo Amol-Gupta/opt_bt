@@ -1,7 +1,7 @@
 # Specification: Options Backtesting Engine
 
 **Feature**: High-Performance Event-Driven Backtesting Engine
-**Status**: DRAFT
+**Status**: DRAFT (Updated for portfolio strategy routing)
 **Owner**: @author
 **Created**: 2026-02-24
 
@@ -26,6 +26,7 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   Reporting module (JSON, HTML, Performance metrics).
 -   Post-trade analysis (Slippage, Taxes applied post-simulation).
 -   Portfolio construction (Combining multiple strategy results).
+-   Portfolio-of-strategies runtime model: many strategies sharing one account with deterministic event routing.
 -   Support for Nifty, BankNifty, and Sensex options.
 
 **Out of Scope:**
@@ -55,10 +56,12 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 **Scenario**:
 1.  User implements the strategy logic (handling `on_data`, `before_open`, etc.).
 2.  User configures backtest parameters (start date, end date, initial capital, instruments).
-3.  User runs the backtest.
-4.  System simulates the market, processing events and executing orders.
-5.  System generates a JSON report with trade list and performance metrics.
-6.  System generates an HTML report for visual analysis.
+3.  At each trading-day start, strategy derives candidate option instruments and subscribes to required contracts.
+4.  At each trading-day end, strategy unsubscribes contracts to reset daily universe deterministically.
+5.  User runs the backtest.
+6.  System simulates the market, processing events and executing orders.
+7.  System generates a JSON report with trade list and performance metrics.
+8.  System generates an HTML report for visual analysis.
 
 ### 3.2 Parameter Optimization
 **Actor**: Quantitative Researcher
@@ -82,12 +85,19 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 ### 4.1 Strategy Interface
 -   [FR-001] **Lifecycle Hooks**: The system MUST provide clear hooks for strategy logic:
     -   `init`: Called once at strategy initialization to set up state and load params.
-    -   `on_before_open`: Called before market open.
-    -   `on_data`: Called when new market data (tick/bar) is available.
-    -   `on_order`: Called when order status changes.
-    -   `on_timer`: Called for strategy-specific scheduled events.
-    -   `on_after_close`: Called after market close.
+    -   `before_open`: Called at the beginning of each trading day before market events for that day.
+    -   `after_close`: Called at the end of each trading day after market events for that day.
+    -   `on_start`: Called once before event loop begins.
+    -   `on_market_event`: Called when new market data (tick/bar) is available.
+    -   `on_signal`: Called when a signal is emitted.
+    -   `on_order_event`: Called when order status changes.
+    -   `on_fill`: Called on fills.
+    -   `on_date_change`: Called on trading-date boundary.
+    -   `on_stop`: Called once after event loop ends.
 -   [FR-002] **Multiple Instrument Support**: A single strategy instance MUST be able to subscribe to and trade multiple option contracts (e.g., Nifty CE and PE simultaneously).
+-   [FR-002a] **Portfolio Strategy Composition**: The system MUST support a portfolio container strategy that holds multiple child strategies under one engine run.
+-   [FR-002b] **Option Instrument Modeling**: The system MUST model option instruments with fields required for deterministic selection and filtering (at minimum: underlying, expiry, strike, option type, and tradable identifier).
+-   [FR-002c] **Daily Subscription Lifecycle**: Strategies MUST be able to compute instrument filters and subscribe at `before_open`, and unsubscribe at `after_close`, with deterministic behavior across runs.
 
 ### 4.2 Order Management
 -   [FR-003] **Order Types**: The engine MUST support at least:
@@ -104,6 +114,11 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   [FR-007] **Independent Leg Execution**: Multi-leg strategies (e.g., Spreads, Straddles) MUST be executed as independent single-leg orders. The system MUST NOT guarantee atomic execution of all legs simultaneously, simulating real-world execution risk.
 -   [FR-008] **Post-Trade Adjustments**: The system MUST allow applying tax models to the results after the simulation completes.
 -   [FR-009] **Stale Fill Detection**: The execution logic MUST detect and log a warning (in both text logs and the JSON report) if a trade is executed against stale data (where no market data exists for the current minute).
+-   [FR-017] **Strategy Identity on Events**: `SignalEvent`, `OrderEvent`, and `FillEvent` MUST include `strategy_id` and preserve it through the full event lifecycle.
+-   [FR-018] **Order Event Routing**: In portfolio mode, `on_order_event` MUST be routed only to the strategy identified by `strategy_id`.
+-   [FR-019] **Fill Event Routing**: In portfolio mode, `on_fill` MUST be routed to exactly one strategy using `FillEvent.strategy_id`, with `order_id -> strategy_id` mapping as deterministic fallback.
+-   [FR-020] **Shared Account Semantics**: All child strategies in a portfolio MUST trade against a single shared account (cash, positions, realized PnL).
+-   [FR-021] **Unroutable Event Handling**: If an order/fill cannot be routed to a known strategy, system MUST log a warning and continue simulation deterministically.
 
 ### 4.3 Data & Simulation
 -   [FR-010] **Event Processing**: The core loop MUST process events strictly by timestamp. Time advances only when no events remain for the current timestamp.
@@ -155,3 +170,8 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   Q: When is slippage applied? → A: Both. The system supports "During Simulation" (impacts fill price) and "Post-Simulation" (stress testing robustness).
 -   Q: Portfolio Allocation Strategy? → A: Fixed Capital (INR) per strategy instance.
 -   Q: Stop Orders on 1-min bars? → A: Same-bar execution with pluggable fill logic (e.g., Optimistic vs Pessimistic). "Next Bar Open" logic is ruled out.
+
+### Session 2026-02-25
+-   Q: How is portfolio strategy modeled at runtime? → A: A `PortfolioStrategy` wraps many child strategies under one engine/account.
+-   Q: How are events routed? → A: Market events are broadcast to all child strategies; signal/order/fill events are routed by `strategy_id` (with `order_id` mapping fallback for fills).
+-   Q: How is capital handled? → A: Current model is one shared account for all child strategies; per-strategy allocation controls remain planned work.

@@ -6,7 +6,6 @@ use opt_bt::strategy::Strategy;
 use opt_bt::common::types::{OrderType, Side};
 use opt_bt::reporting::json::generate_report;
 use std::sync::Arc;
-use std::collections::HashSet;
 
 // A simple Straddle Strategy for testing
 // Buys 1 lot of CE and 1 lot of PE at the start
@@ -33,7 +32,7 @@ impl Strategy for StraddleStrategy {
         println!("StraddleStrategy: Started");
     }
 
-    fn on_market_event(&mut self, ctx: &mut Context, event: &MarketEvent) {
+    fn on_market_event(&mut self, ctx: &mut Context, _event: &MarketEvent) {
         if self.entered {
             return;
         }

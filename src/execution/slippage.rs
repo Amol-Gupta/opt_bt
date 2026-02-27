@@ -4,6 +4,7 @@ pub trait SlippageModel {
     fn calculate_slippage(&self, price: Price, quantity: i64, side: Side) -> Price;
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NoSlippage;
 
 impl SlippageModel for NoSlippage {
@@ -12,6 +13,7 @@ impl SlippageModel for NoSlippage {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct FixedSlippage {
     pub ticks: i64,
     pub tick_size: i64,

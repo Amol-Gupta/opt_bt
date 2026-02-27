@@ -6,6 +6,7 @@ pub mod reporting;
 pub mod config;
 pub mod portfolio;
 pub mod engine;
+mod display;
 
 // Re-export specific items for easier access if needed
 pub use common::*;

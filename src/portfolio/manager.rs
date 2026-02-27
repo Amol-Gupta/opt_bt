@@ -1,15 +1,25 @@
-use crate::common::types::{Side, Price, PRICE_SCALE};
-use crate::portfolio::models::{Order, Trade, Position};
+use crate::common::types::{Side, Price};
+use crate::portfolio::models::{Trade, Position};
 use crate::common::event::FillEvent;
 use std::collections::HashMap;
 // use crate::data::models::MarketData; 
 
+#[derive(Debug, Clone, Default)]
+pub struct StrategyAttribution {
+    pub trade_count: u64,
+    pub realized_pnl: i64,
+    pub fees_paid: i64,
+    pub gross_notional: i64,
+}
+
+#[derive(Debug)]
 pub struct Account {
     pub initial_capital: i64, // Scaled by PRICE_SCALE
     pub cash: i64,            // Scaled
     pub positions: HashMap<u32, Position>,
     pub trades: Vec<Trade>,
     pub realized_pnl: i64,    // Scaled
+    pub strategy_attribution: HashMap<String, StrategyAttribution>,
 }
 
 impl Account {
@@ -20,6 +30,7 @@ impl Account {
             positions: HashMap::new(),
             trades: Vec::new(),
             realized_pnl: 0,
+            strategy_attribution: HashMap::new(),
         }
     }
     
@@ -28,6 +39,7 @@ impl Account {
         let trade = Trade {
             id: self.trades.len() as u64 + 1, // Simple ID
             order_id: fill.order_id,
+            strategy_id: fill.strategy_id.clone(),
             instrument_id: fill.instrument_id,
             side: fill.side,
             quantity: fill.quantity, // i64
@@ -69,6 +81,15 @@ impl Account {
         let new_realized = pos.realized_pnl;
         
         self.realized_pnl += new_realized - old_realized;
+
+        let attribution = self
+            .strategy_attribution
+            .entry(fill.strategy_id.clone())
+            .or_default();
+        attribution.trade_count += 1;
+        attribution.fees_paid += fee;
+        attribution.gross_notional += cost.abs();
+        attribution.realized_pnl += new_realized - old_realized;
         
         self.trades.push(trade);
     }
@@ -149,6 +170,12 @@ mod tests {
         // 5 * 200,000 = 1,000,000.
         assert_eq!(pos.realized_pnl, 1_000_000);
         assert_eq!(acc.realized_pnl, 1_000_000);
+
+        let strategy_attr = acc.strategy_attribution.get("test").expect("missing strategy attribution");
+        assert_eq!(strategy_attr.trade_count, 2);
+        assert_eq!(strategy_attr.realized_pnl, 1_000_000);
+        assert_eq!(strategy_attr.fees_paid, 0);
+        assert_eq!(strategy_attr.gross_notional, 16_000_000);
         
         // Equity check
         // Current price 130

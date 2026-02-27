@@ -43,6 +43,7 @@ impl PartialOrd for Event {
     }
 }
 
+#[derive(Debug)]
 pub struct EventQueue {
     heap: BinaryHeap<Event>,
 }

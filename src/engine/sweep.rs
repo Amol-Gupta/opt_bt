@@ -1,14 +1,17 @@
 use crate::config::{Config, SweepConfig};
 use crate::engine::runner::Engine;
-use crate::reporting::json::{generate_report, BacktestReport};
+use crate::reporting::json::{generate_report_with_reproducibility, BacktestReport};
+use crate::reporting::reproducibility::build_reproducibility;
 use crate::strategy::Strategy;
 use crate::data::models::MarketData;
 use crate::common::types::PRICE_SCALE;
+use crate::portfolio::allocator::PortfolioAllocator;
 
 use std::sync::Arc;
 use rayon::prelude::*;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
 pub struct SweepResult {
     pub params: HashMap<String, String>,
     pub report: BacktestReport,
@@ -20,11 +23,12 @@ pub struct SweepResult {
 pub fn run_sweep<S, F>(
     sweep_config: &SweepConfig,
     market_data: Arc<MarketData>,
+    data_path: &str,
     strategy_factory: F
 ) -> Vec<SweepResult>
 where
     S: Strategy + Send,
-    F: Fn(&Config) -> S + Sync + Send, 
+    F: Fn(&Config) -> (S, Option<PortfolioAllocator>) + Sync + Send,
 {
     // 1. Generate all configurations
     let configs = sweep_config.generate_permutations();
@@ -34,7 +38,7 @@ where
     // 2. Run in parallel using Rayon
     configs.into_par_iter().map(|config| {
         // Create Strategy instance with specific params
-        let strategy = strategy_factory(&config);
+        let (strategy, allocator) = strategy_factory(&config);
         
         // Create Engine
         let mut engine = Engine::new(
@@ -42,6 +46,9 @@ where
             market_data.clone(), 
             config.initial_capital * PRICE_SCALE,
         );
+        if let Some(allocator) = allocator {
+            engine.context.set_allocator(allocator);
+        }
         
         // Initialize
         engine.init();
@@ -50,7 +57,9 @@ where
         engine.run();
         
         // Generate Report
-        let report = generate_report(&engine);
+        let reproducibility = build_reproducibility(&config, data_path)
+            .expect("failed to build reproducibility metadata for sweep run");
+        let report = generate_report_with_reproducibility(&engine, Some(reproducibility));
         
         SweepResult {
             params: config.merged_params,
@@ -94,6 +103,9 @@ mod tests {
             initial_capital: 100000,
             log_level: "info".to_string(),
             params: None,
+            strategy: None,
+            portfolio: None,
+            option_filter: None,
             merged_params: HashMap::new(),
         };
 
@@ -109,9 +121,9 @@ mod tests {
         let md = setup_market_data();
         
         // Assuming RandomStrategy is Send
-        let results = run_sweep(&sweep_config, md, |cfg| {
+        let results = run_sweep(&sweep_config, md, "sample_data/niftyIndex2024.sample.parquet", |cfg| {
             let prob = cfg.merged_params.get("prob").unwrap().parse::<f64>().unwrap_or(0.5);
-            RandomStrategy::new(42, prob, 1)
+            (RandomStrategy::new(42, prob, 1), None)
         });
         
         assert_eq!(results.len(), 2);

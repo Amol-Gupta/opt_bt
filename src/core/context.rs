@@ -4,6 +4,7 @@ use crate::core::types::{OrderType, Side, Price}; // Removed Order for now
 
 /// Context is the Gateway for Strategy <-> Engine communication.
 /// It provides access to data and allows placing orders.
+#[derive(Debug)]
 pub struct Context {
     pub market_data: Arc<MarketData>,
     pub current_timestamp: i64,

@@ -80,6 +80,7 @@ impl PartialOrd for Event {
     }
 }
 
+#[derive(Debug)]
 pub struct EventQueue {
     queue: BinaryHeap<Event>,
 }
@@ -115,7 +116,6 @@ impl EventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::{OrderType, Side, Status};
 
     #[test]
     fn test_event_ordering() {

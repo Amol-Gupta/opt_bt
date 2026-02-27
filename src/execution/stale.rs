@@ -8,6 +8,7 @@ pub enum DataStatus {
     NoData,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct StaleDetector {
     pub threshold: Duration,
 }

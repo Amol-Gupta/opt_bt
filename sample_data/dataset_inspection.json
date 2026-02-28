@@ -64,9 +64,67 @@
       ]
     },
     {
+      "source": "/quant/sensex_index_final.parquet",
+      "output": "sample_data/sensex_index_final.sample.parquet",
+      "rows": 2000,
+      "columns": [
+        "Ticker",
+        "DateTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "__index_level_0__"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "DateTime": "Datetime(time_unit='ns', time_zone=None)",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64",
+        "__index_level_0__": "Int64"
+      },
+      "time_column": "DateTime",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "SENSEX"
+      ]
+    },
+    {
+      "source": "/quant/sensex_option_final.parquet",
+      "output": "sample_data/sensex_option_final.sample.parquet",
+      "rows": 2000,
+      "columns": [
+        "Ticker",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "timestamp"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64",
+        "timestamp": "Datetime(time_unit='ns', time_zone='UTC')"
+      },
+      "time_column": "timestamp",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "SENSEX01DEC2364700CE",
+        "SENSEX01DEC2364000PE",
+        "SENSEX01DEC2365500PE",
+        "SENSEX01DEC2365700PE",
+        "SENSEX01DEC2365800PE"
+      ]
+    },
+    {
       "source": "composed:/quant/niftyIndex2024.parquet+/quant/merged_data.parquet",
       "output": "sample_data/nifty_with_options.sample.parquet",
-      "rows": 7142,
+      "rows": 264001,
       "columns": [
         "Ticker",
         "timestamp",
@@ -86,20 +144,29 @@
       "time_column": "timestamp",
       "symbol_column": "Ticker",
       "selected_symbols": [
-        "NIFTY 50",
-        "NIFTY04JAN2421550CE",
-        "NIFTY04JAN2421550PE",
-        "NIFTY04JAN2421600CE",
-        "NIFTY04JAN2421600PE",
-        "NIFTY04JAN2421650CE",
-        "NIFTY04JAN2421650PE",
-        "NIFTY04JAN2421700CE",
-        "NIFTY04JAN2421700PE",
-        "NIFTY04JAN2421750CE",
-        "NIFTY04JAN2421750PE",
-        "NIFTY04JAN2421800CE",
-        "NIFTY04JAN2421800PE"
-      ]
+        "NIFTY05DEC2424300CE",
+        "NIFTY05DEC2424200CE",
+        "NIFTY05DEC2424500CE",
+        "NIFTY26DEC2424000PE",
+        "NIFTY05DEC2424400CE",
+        "NIFTY26DEC2424500CE",
+        "NIFTY05DEC2423500PE",
+        "NIFTY05DEC2423000PE",
+        "NIFTY05DEC2424000CE",
+        "NIFTY26DEC2423500PE",
+        "NIFTY26DEC2424000CE",
+        "NIFTY05DEC2424600CE",
+        "NIFTY05DEC2423700PE",
+        "NIFTY26DEC2425000CE",
+        "NIFTY05DEC2423800PE",
+        "NIFTY05DEC2424100CE",
+        "NIFTY05DEC2423600PE",
+        "NIFTY05DEC2423400PE",
+        "NIFTY05DEC2423300PE",
+        "NIFTY05DEC2424700CE"
+      ],
+      "unique_symbols": 21,
+      "anchor_timestamp": "2024-11-28 15:28:59"
     }
   ]
 }

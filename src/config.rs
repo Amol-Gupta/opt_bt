@@ -3,8 +3,32 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use anyhow::{Result, Context}; // Added Context for error message
+use anyhow::{bail, Result, Context}; // Added Context for error message
 use itertools::Itertools;
+
+pub fn parse_date_range_to_epoch(start_date: &str, end_date: &str) -> Result<(i64, i64)> {
+    let start = chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+        .with_context(|| format!("invalid --start-date '{}': expected YYYY-MM-DD", start_date))?;
+    let end = chrono::NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+        .with_context(|| format!("invalid --end-date '{}': expected YYYY-MM-DD", end_date))?;
+
+    let start_ts = start
+        .and_hms_opt(0, 0, 0)
+        .context("invalid start date time components")?
+        .and_utc()
+        .timestamp();
+    let end_ts = end
+        .and_hms_opt(23, 59, 59)
+        .context("invalid end date time components")?
+        .and_utc()
+        .timestamp();
+
+    if end_ts < start_ts {
+        bail!("invalid date range: end_date must be >= start_date");
+    }
+
+    Ok((start_ts, end_ts))
+}
 
 #[derive(Parser, Debug, Clone, Serialize, Deserialize)]
 #[command(author, version, about, long_about = None)]
@@ -120,6 +144,28 @@ fn parse_key_val(s: &str) -> Result<(String, String), String> {
 }
 
 impl Config {
+    fn validate_backtest_dates(&self) -> Result<()> {
+        let start = self.start_date.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let end = self.end_date.as_deref().map(str::trim).filter(|s| !s.is_empty());
+
+        let mut missing = Vec::new();
+        if start.is_none() {
+            missing.push("start_date");
+        }
+        if end.is_none() {
+            missing.push("end_date");
+        }
+
+        if !missing.is_empty() {
+            bail!(
+                "missing required backtest date range field(s): {}",
+                missing.join(", ")
+            );
+        }
+
+        Ok(())
+    }
+
     /// Load configuration with priority: CLI > Env (handled by clap) > JSON > Defaults
     pub fn load() -> Result<Self> {
         // 1. Parse CLI args (updates Env vars automatically via clap features)
@@ -207,6 +253,8 @@ impl Config {
         }
         self.merged_params = final_params;
 
+        self.validate_backtest_dates()?;
+
         Ok(self)
     }
 }
@@ -233,6 +281,7 @@ impl SweepConfig {
     pub fn from_file(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path).context("Failed to read sweep config file")?;
         let config: SweepConfig = serde_json::from_str(&content).context("Failed to parse sweep config JSON")?;
+        config.base_config.validate_backtest_dates()?;
         Ok(config)
     }
 
@@ -281,6 +330,51 @@ impl SweepConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resolve_requires_start_and_end_dates() {
+        let config = Config {
+            data_dir: None,
+            config_file: None,
+            start_date: None,
+            end_date: Some("2024-01-31".to_string()),
+            initial_capital: 100000,
+            log_level: "info".to_string(),
+            log_time_mode: "simulation".to_string(),
+            log_file: None,
+            report_path: None,
+            params: None,
+            strategy: None,
+            portfolio: None,
+            option_filter: None,
+            merged_params: HashMap::new(),
+        };
+
+        let err = config.resolve().expect_err("resolve should fail when start_date is missing");
+        assert!(err.to_string().contains("start-date"));
+    }
+
+    #[test]
+    fn test_resolve_accepts_complete_date_range() {
+        let config = Config {
+            data_dir: None,
+            config_file: None,
+            start_date: Some("2024-01-01".to_string()),
+            end_date: Some("2024-01-31".to_string()),
+            initial_capital: 100000,
+            log_level: "info".to_string(),
+            log_time_mode: "simulation".to_string(),
+            log_file: None,
+            report_path: None,
+            params: None,
+            strategy: None,
+            portfolio: None,
+            option_filter: None,
+            merged_params: HashMap::new(),
+        };
+
+        assert!(config.resolve().is_ok());
+    }
 
     #[test]
     fn test_config_permute() {

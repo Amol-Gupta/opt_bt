@@ -57,76 +57,7 @@ impl DefaultFillModel {
 
 impl FillModel for DefaultFillModel {
     fn fill_order(&mut self, order: &OrderEvent, market_data: &MarketData) -> Option<FillEvent> {
-        // Find the latest bar for the instrument
-        // This requires optimized lookup. For now, linear scan or map lookup.
-        let bars = market_data.bars.get(&order.instrument_id)?;
-        
-        // Find bar relevant to the order timestamp.
-        // If order ts is T, we look for bar at T.
-        // CORRECTED LOGIC:
-        // We should look for the bar at `order.timestamp`.
-        // If this simulates "Did it fill?", we check that bar.
-        // If staleness check is enabled, we verify `bar.timestamp` isn't too old relative to `order.timestamp`.
-        // (Assuming `order.timestamp` is roughly "Now" when checking for Market orders).
-        
-        // For simple backtest, we assume data availability at `order.timestamp`.
-        
-        let idx = bars.partition_point(|b| b.timestamp < order.timestamp);
-        // If partition_point returns idx, bars[idx] is the first one >= order.timestamp.
-        // If bars[idx].timestamp == order.timestamp, that's the "Current" bar.
-        
-        if idx >= bars.len() {
-            return None; // No future data?
-        }
-        
-        let bar = &bars[idx];
-        
-        // Stale Check
-        if let Some(detector) = &self.stale_detector {
-            match detector.check(order.timestamp, bar.timestamp) {
-                DataStatus::Stale => return None, // Data is too old (or bar is in future? check handles future)
-                DataStatus::Future => return None, // Bar is in future relative to order? (Wait, idx finds >= order.ts)
-                // If bar.timestamp > order.timestamp, that implies we are looking at future data?
-                // Actually, if we are at T=1000 (order), and we find bar at T=1000, diff is 0. Fresh.
-                // If we find bar at T=1001, diff is -1. Future.
-                // But `partition_point` gives >=. So if we have T=900 and T=1100.
-                // idx will point to T=1100.
-                // `check(1000, 1100)` -> Future.
-                // So we can't fill at T=1000 using T=1100 data (unless we assume we wait until T=1100).
-                // But `fill_order` usually tries to fill *at* `order.timestamp`.
-                // So if bar.timestamp > order.timestamp, we generally can't fill *yet* (unless we peek).
-                // But for Market orders, we want immediate fill.
-                // So if bar.timestamp > order.timestamp, we treat it as NO DATA at T=1000.
-                _ => {}
-            }
-            
-            // Additional check: If bar.timestamp > order.timestamp, we shouldn't fill if we want strict "At time T" fill.
-            // But usually we allow filling at Open of T+1?
-            // Let's stick to strict timestamp matching for Staleness context.
-             if bar.timestamp > order.timestamp {
-                 // return None; 
-                 // Actually, if we have gaps, we might want to carry over previous close?
-                 // But `bars` vector contains only available bars.
-                 // If we are at T=1000, and idx points to T=1100, then T=1000 has no bar.
-                 // The *previous* bar is at idx-1 (T=900).
-                 // Staleness check should be against *previous* bar if current one is future.
-             }
-        }
-        
-        // REFINED LOGIC:
-        // We want the most recent bar relative to `order.timestamp` that is NOT in the future.
-        // `bars[idx]` is >= order.timestamp.
-        // If `bars[idx] == order.timestamp`, we use it.
-        // If `bars[idx] > order.timestamp`, available data is in future. We should look at `bars[idx-1]`.
-        // If `idx=0` and `bars[0] > order.timestamp`, we have NO past data.
-        
-        let target_bar = if bar.timestamp == order.timestamp {
-             bar
-        } else if idx > 0 {
-             &bars[idx - 1]
-        } else {
-             return None; // No past data
-        };
+        let target_bar = market_data.get_bar_at_or_before(order.instrument_id, order.timestamp)?;
         
         // Now check staleness on `target_bar`
         if let Some(detector) = &self.stale_detector {

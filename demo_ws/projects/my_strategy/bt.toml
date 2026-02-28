@@ -7,7 +7,9 @@ bin = "opt_bt"
 
 [run]
 default_strategy = "my_strategy"
-data = "./sample_data/niftyIndex2024.sample.parquet"
+data = "/quant/nifty_with_options.parquet"
+start_date = "2024-01-01"
+end_date = "2024-01-05"
 log_time_mode = "simulation"
 initial_capital = 1000000
 

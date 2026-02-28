@@ -27,7 +27,7 @@ Development of a high-performance options backtesting engine in Rust, optimized 
 - Portfolio runtime path is wired through CLI/config with strategy composition support.
 - Routing tests now cover unknown/missing strategy-id and out-of-order lifecycle edge cases.
 - Detailed performance metrics are now computed in reporting (Sharpe, Sortino, drawdown, profit factor).
-- Post-simulation analysis now includes stress-test scenarios and pluggable tax modeling in reporting.
+- Post-simulation analysis now includes pluggable tax modeling in reporting.
 - Consolidated portfolio reporting now includes aggregate and per-strategy breakdown views.
 - HTML report template and generator now exist for report rendering/export.
 - Reproducibility metadata is now populated from runtime config and dataset SHA256 hashing.
@@ -138,7 +138,7 @@ Development of a high-performance options backtesting engine in Rust, optimized 
 - [x] **Attribution**: Add strategy-level trade/PnL attribution alongside shared account totals. (T023c)
 - [x] **Routing Hardening**: Define and implement unroutable-event policy + diagnostics in runtime and reports. (T023d)
 - [x] **Metrics**: Implement detailed performance metrics (Sharpe, Drawdown, Sortino). (T024)
-- [x] **Post-Analysis**: Post-simulation analysis logic (stress tests, taxes). (T025)
+- [x] **Post-Analysis**: Post-simulation analysis logic (tax modeling). (T025)
 - [x] **Portfolio View**: Consolidated portfolio reporting (portfolio + per-strategy breakdown). (T026)
 
 ### Phase 5: Polish (tasks.md Phase 6)
@@ -175,6 +175,21 @@ Development of a high-performance options backtesting engine in Rust, optimized 
 - [ ] **Typed Parameter Validation**: Validate strategy params from metadata schema before launching simulation.
 - [ ] **Backward Compatibility**: Keep stage-1 registration path available as fallback during migration.
 - [ ] **Reproducible Packaging**: Strengthen version pinning for engine + strategy dependencies and emitted run metadata.
+
+### Phase 7: Cross-Run In-Memory Dataset Cache
+- [ ] **Cache Service Process**: Introduce a long-lived `bt cache-server` process that owns resident `Arc<MarketData>` entries in RAM.
+- [ ] **Dataset Identity**: Implement deterministic fingerprinting (path + size + mtime; optional SHA256) for cache-key derivation and invalidation.
+- [ ] **Cache API**: Add `ensure_loaded`, `status`, and `evict` operations for runtime orchestration and observability.
+- [ ] **Run/Sweep Integration**: Wire `bt run` and `bt sweep` to query cache first and reuse in-memory dataset on hit.
+- [ ] **Fallback Path**: Preserve existing direct-load path when cache service is unavailable, with explicit runtime warning.
+- [ ] **Metrics & Reporting**: Capture cache telemetry (`cache_hit`, `load_ms`, `cache_lookup_ms`, `sim_ms`) in diagnostics/reports.
+- [ ] **Validation**: Add cold/warm benchmark scenarios proving repeated-run load bypass on unchanged datasets.
+
+### Cache Architecture Notes
+- **Ownership Model**: Cache service maintains immutable dataset handles (`Arc<MarketData>`) and returns references keyed by fingerprint.
+- **Correctness Guardrail**: Any fingerprint mismatch forces a reload to avoid stale-data reuse.
+- **Concurrency**: Requests are serialized per dataset key during load to prevent duplicate ingestion races.
+- **Operational UX**: Add CLI surfaces for preload and status so researchers can warm cache before sweeps.
 
 ## Artifacts Generated
 - `research.md`: Technical decisions.

@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
+use opt_bt::cache::ipc as cache_ipc;
+use opt_bt::cache::snapshot::load_market_data_snapshot;
 use my_strategy::create_strategy_by_id;
 use opt_bt::common::logging;
 use opt_bt::common::types::PRICE_SCALE;
-use opt_bt::data::loader::DataLoader;
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
 use opt_bt::strategy::portfolio::PortfolioStrategy;
@@ -22,6 +23,30 @@ fn parse_params(values: &[String]) -> Result<BTreeMap<String, String>, String> {
         params.insert(key.to_string(), value.to_string());
     }
     Ok(params)
+}
+
+fn load_market_data(
+    data_path: &str,
+    start_ts: i64,
+    end_ts: i64,
+) -> std::sync::Arc<opt_bt::data::models::MarketData> {
+    let addr = std::env::var("BT_CACHE_ADDR")
+        .unwrap_or_else(|_| panic!("BT_CACHE_ADDR is required: backtest runs in cache-only mode"));
+    let ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
+        .unwrap_or_else(|err| panic!("Cache ENSURE failed for {data_path} via {addr}: {err}"));
+    let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
+    let md = load_market_data_snapshot(snapshot_path).unwrap_or_else(|err| {
+        panic!(
+            "Failed to load cache snapshot {}: {err}",
+            ensured.entry.snapshot_path
+        )
+    });
+    log::info!(
+        "Loaded market data via cache snapshot: cache_hit={} snapshot={}",
+        ensured.cache_hit,
+        ensured.entry.snapshot_path
+    );
+    md
 }
 
 fn main() {
@@ -70,6 +95,18 @@ fn main() {
     }
 
     let strategy_id = strategy_id.unwrap_or_else(|| "my_strategy".to_string());
+    let resolved_start_date = start_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| panic!("missing required backtest date range field(s): start_date"));
+    let resolved_end_date = end_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| panic!("missing required backtest date range field(s): end_date"));
+    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(resolved_start_date, resolved_end_date)
+        .unwrap_or_else(|err| panic!("{}", err));
     let data = data.unwrap_or_else(|| "./sample_data/niftyIndex2024.sample.parquet".to_string());
 
     let params = parse_params(&raw_params).unwrap_or_else(|err| panic!("Failed to parse params: {}", err));
@@ -78,6 +115,9 @@ fn main() {
         Some(&log_time_mode),
         log_file.as_deref(),
     );
+    if log_time_mode.eq_ignore_ascii_case("simulation") {
+        logging::set_simulation_time(start_ts);
+    }
     log::info!(
         "Backtest config: strategy={} start_date={} end_date={} data={} initial_capital={} log_level={} log_time_mode={}",
         strategy_id,
@@ -88,8 +128,7 @@ fn main() {
         log_level,
         log_time_mode
     );
-    let market_data = DataLoader::load_parquet(&data)
-        .unwrap_or_else(|err| panic!("Failed to load parquet data: {}", err));
+    let market_data = load_market_data(&data, start_ts, end_ts);
 
     let strategy = create_strategy_by_id(&strategy_id, &params)
         .unwrap_or_else(|| panic!("Unknown project strategy id: {}", strategy_id));
@@ -98,6 +137,7 @@ fn main() {
     portfolio.add_strategy("default", strategy);
 
     let mut engine = Engine::new(portfolio, market_data, initial_capital * PRICE_SCALE);
+    engine.set_date_bounds(start_ts, end_ts);
     engine.init();
     engine.run();
 

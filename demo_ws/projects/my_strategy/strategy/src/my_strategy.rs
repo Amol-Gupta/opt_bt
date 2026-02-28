@@ -54,12 +54,12 @@ impl Strategy for MyStrategy {
             //     bar.close as f64 / PRICE_SCALE as f64,
             //     bar.volume
             // );
-            log::info!("bar {:?}", bar);
+            // log::info!("bar {:?}", bar);
                 
                 
-            if bar.close > bar.open {
-                let _ = ctx.place_order(event.instrument_id, Side::Buy, OrderType::Market, 1);
-            }
+            // if bar.close > bar.open {
+            //     let _ = ctx.place_order(event.instrument_id, Side::Buy, OrderType::Market, 1);
+            // }
         }
     }
 

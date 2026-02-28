@@ -37,14 +37,9 @@ impl Strategy for RandomStrategy {
                 Side::Sell
             };
 
-            let bars = match ctx.market_data.bars.get(&event.instrument_id) {
-                Some(b) => b,
+            let bar = match ctx.get_bar(event.instrument_id) {
+                Some(bar) => bar,
                 None => return,
-            };
-
-            let bar = match bars.binary_search_by_key(&event.timestamp, |b| b.timestamp) {
-                Ok(idx) => &bars[idx],
-                Err(_) => return,
             };
 
             let close_price = bar.close;

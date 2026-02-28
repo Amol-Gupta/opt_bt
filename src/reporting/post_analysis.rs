@@ -41,7 +41,6 @@ pub struct StressResult {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct PostAnalysisSummary {
     pub tax: TaxSummary,
-    pub stress_tests: Vec<StressResult>,
 }
 
 pub trait TaxModel {
@@ -97,15 +96,12 @@ pub fn default_stress_scenarios() -> Vec<StressScenario> {
 }
 
 pub fn run_post_analysis(
-    account: &Account,
     trades: &[Trade],
     tax_model: &dyn TaxModel,
-    scenarios: &[StressScenario],
 ) -> PostAnalysisSummary {
     let tax = apply_tax_model(trades, tax_model);
-    let stress_tests = run_stress_tests(account, scenarios);
 
-    PostAnalysisSummary { tax, stress_tests }
+    PostAnalysisSummary { tax }
 }
 
 pub fn apply_tax_model(trades: &[Trade], tax_model: &dyn TaxModel) -> TaxSummary {

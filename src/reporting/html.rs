@@ -147,7 +147,7 @@ mod tests {
         TradeRecord,
     };
     use crate::reporting::portfolio::PortfolioView;
-    use crate::reporting::post_analysis::{PostAnalysisSummary, StressResult, TaxSummary};
+    use crate::reporting::post_analysis::{PostAnalysisSummary, TaxSummary};
 
     fn sample_report() -> BacktestReport {
         BacktestReport {
@@ -192,12 +192,6 @@ mod tests {
                     trade_count: 0,
                     trades: vec![],
                 },
-                stress_tests: vec![StressResult {
-                    scenario: "down_10pct".to_string(),
-                    price_shock_pct: -0.1,
-                    shocked_equity: 900.0,
-                    pnl_impact: -100.0,
-                }],
             },
             portfolio: PortfolioView {
                 strategy_count: 1,

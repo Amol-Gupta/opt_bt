@@ -85,6 +85,7 @@ impl Context {
     }
 
     pub fn warn(&mut self, message: String) {
+        log::warn!("{}", message);
         self.warnings.push(message);
     }
 
@@ -134,22 +135,8 @@ impl Context {
     }
     
     pub fn get_bar(&self, instrument_id: u32) -> Option<&Bar> {
-        // In a real engine, we would look up the bar at `current_timestamp` 
-        // or the latest bar <= `current_timestamp`.
-        // Since `MarketData` has `HashMap<u32, Vec<Bar>>`, we can search.
-        // For efficiency, Engine usually maintains "Current Quote" state.
-        // But for this MVP, let's just do a binary search or lookup if needed.
-        // Or assume the strategy receives the bar in `on_data`.
-        // This method allows looking up *other* instruments.
-        if let Some(bars) = self.market_data.bars.get(&instrument_id) {
-            // Find latest bar <= current_timestamp
-            // This is O(log N) per lookup.
-            let idx = bars.partition_point(|b| b.timestamp <= self.current_timestamp);
-            if idx > 0 {
-                return Some(&bars[idx - 1]);
-            }
-        }
-        None
+        self.market_data
+            .get_bar_at_or_before(instrument_id, self.current_timestamp)
     }
 
     /// Place a new order
@@ -160,6 +147,20 @@ impl Context {
                 quantity, self.active_strategy_id, instrument_id
             ));
             return 0;
+        }
+
+        if side == Side::Buy {
+            let required_cash = self.estimate_order_notional(instrument_id, &order_type, quantity);
+            if required_cash > self.account.cash {
+                self.warn(format!(
+                    "rejected order: insufficient capital strategy_id='{}' instrument_id={} required_cash={} available_cash={}",
+                    self.active_strategy_id,
+                    instrument_id,
+                    required_cash,
+                    self.account.cash
+                ));
+                return 0;
+            }
         }
 
         let additional_notional = self.estimate_order_notional(instrument_id, &order_type, quantity);
@@ -412,6 +413,33 @@ mod tests {
         assert_eq!(second.unsubscribed, vec![1, 3]);
         assert_eq!(second.unchanged, vec![2]);
         assert_eq!(ctx.active_subscriptions(), vec![2, 4]);
+    }
+
+    #[test]
+    fn test_rejects_buy_order_on_insufficient_capital() {
+        let mut md = MarketData::new();
+        md.add_bar(
+            "NIFTY",
+            Bar {
+                timestamp: 100,
+                open: 100 * PRICE_SCALE,
+                high: 100 * PRICE_SCALE,
+                low: 100 * PRICE_SCALE,
+                close: 100 * PRICE_SCALE,
+                volume: 1,
+            },
+        );
+        let instrument_id = md.get_id("NIFTY").expect("instrument missing");
+        let mut ctx = Context::new(Arc::new(md), 10 * PRICE_SCALE);
+        ctx.set_time(100);
+
+        let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1);
+        assert_eq!(order_id, 0);
+        assert!(ctx.event_buffer.is_empty());
+        assert!(ctx
+            .warnings
+            .iter()
+            .any(|w| w.contains("insufficient capital")));
     }
 }
 

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use crate::common::types::{InstrumentId, InstrumentKind, OptionType, Price, PRICE_SCALE};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OptionSpec {
     pub underlying: String,
     pub expiry_yyyymmdd: i32,
@@ -10,7 +10,7 @@ pub struct OptionSpec {
     pub option_type: OptionType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Instrument {
     pub id: InstrumentId,
     pub symbol: String,
@@ -39,7 +39,7 @@ impl Instrument {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Bar {
     pub timestamp: i64, // Unix Timestamp (seconds)
     pub open: Price,    // Price * 10,000
@@ -49,10 +49,12 @@ pub struct Bar {
     pub volume: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct MarketData {
     // Map instrument ID to sorted bars
     pub bars: HashMap<InstrumentId, Vec<Bar>>,
+    // Map timestamp to per-instrument bar snapshot
+    pub bars_by_time: BTreeMap<i64, HashMap<InstrumentId, Bar>>,
     // Metadata for instruments (Symbol -> ID)
     pub instruments: HashMap<String, InstrumentId>,
     // Reverse lookup (ID -> Symbol)
@@ -65,6 +67,7 @@ impl MarketData {
     pub fn new() -> Self {
         Self {
             bars: HashMap::new(),
+            bars_by_time: BTreeMap::new(),
             instruments: HashMap::new(),
             ids: HashMap::new(),
             instrument_meta: HashMap::new(),
@@ -89,6 +92,10 @@ impl MarketData {
         });
         
         self.bars.entry(id).or_insert_with(Vec::new).push(bar);
+        self.bars_by_time
+            .entry(bar.timestamp)
+            .or_insert_with(HashMap::new)
+            .insert(id, bar);
     }
     
     pub fn get_id(&self, symbol: &str) -> Option<InstrumentId> {
@@ -101,6 +108,30 @@ impl MarketData {
 
     pub fn get_instrument(&self, id: InstrumentId) -> Option<&Instrument> {
         self.instrument_meta.get(&id)
+    }
+
+    pub fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<&Bar> {
+        self.bars_by_time
+            .get(&timestamp)
+            .and_then(|bars| bars.get(&instrument_id))
+    }
+
+    pub fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<&Bar> {
+        if let Some(bar) = self.get_bar_at(instrument_id, timestamp) {
+            return Some(bar);
+        }
+
+        let bars = self.bars.get(&instrument_id)?;
+        let idx = bars.partition_point(|bar| bar.timestamp <= timestamp);
+        if idx > 0 {
+            Some(&bars[idx - 1])
+        } else {
+            None
+        }
+    }
+
+    pub fn market_timeline(&self) -> impl Iterator<Item = i64> + '_ {
+        self.bars_by_time.keys().copied()
     }
 }
 
@@ -201,6 +232,7 @@ mod tests {
         assert_eq!(md.get_id("NIFTY"), Some(1));
         assert_eq!(md.bars.get(&1).unwrap().len(), 1);
         assert_eq!(md.bars.get(&1).unwrap()[0], bar);
+        assert_eq!(md.get_bar_at(1, 1000), Some(&bar));
         assert_eq!(
             md.get_instrument(1).map(|instrument| instrument.kind),
             Some(InstrumentKind::Unknown)

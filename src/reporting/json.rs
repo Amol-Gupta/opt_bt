@@ -1,12 +1,12 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use crate::engine::runner::Engine;
 use crate::strategy::Strategy;
 use crate::common::types::PRICE_SCALE;
 use crate::portfolio::manager::StrategyAttribution;
 use crate::reporting::metrics::calculate_metrics;
 use crate::reporting::post_analysis::{
-    default_stress_scenarios, run_post_analysis, FlatRateTaxModel, PostAnalysisSummary,
+    run_post_analysis, FlatRateTaxModel, PostAnalysisSummary,
 };
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
 use chrono::{DateTime, Utc};
@@ -129,12 +129,7 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         final_cash_balance: computed_metrics.final_cash_balance,
     };
     let tax_model = FlatRateTaxModel::new("flat_rate_0pct", 0.0);
-    let post_analysis = run_post_analysis(
-        &engine.context.account,
-        &engine.context.account.trades,
-        &tax_model,
-        &default_stress_scenarios(),
-    );
+    let post_analysis = run_post_analysis(&engine.context.account.trades, &tax_model);
     let portfolio = build_portfolio_view(&engine.context.account);
 
     let reproducibility = reproducibility.unwrap_or_else(|| Reproducibility {
@@ -170,28 +165,117 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
 }
 
 fn reconstruct_trades(raw_trades: &[crate::portfolio::models::Trade], market_data: &crate::data::models::MarketData) -> Vec<TradeRecord> {
-    let mut closed_trades = Vec::new();
-    
-    for trade in raw_trades {
-        let symbol = market_data.ids.get(&trade.instrument_id).cloned().unwrap_or_else(|| format!("ID:{}", trade.instrument_id));
-        let price_f64 = (trade.price as f64) / (PRICE_SCALE as f64);
-        
-        // Let's just create a record for every trade for now (incorrect but compiles).
-        closed_trades.push(TradeRecord {
-            id: trade.id,
-            strategy_id: trade.strategy_id.clone(),
-            symbol,
-            side: format!("{:?}", trade.side),
-            entry_time: format_timestamp(trade.timestamp), 
-            exit_time: format_timestamp(trade.timestamp),
-            qty: trade.quantity,
-            entry_price: price_f64,
-            exit_price: price_f64,
-            pnl: 0.0, // Calculated PnL
-            stale_fill: false,
-        });
+    #[derive(Clone)]
+    struct OpenLot {
+        qty: i64,
+        price: i64,
+        timestamp: i64,
     }
-    
+
+    #[derive(Default)]
+    struct OpenLots {
+        longs: VecDeque<OpenLot>,
+        shorts: VecDeque<OpenLot>,
+    }
+
+    let mut closed_trades = Vec::new();
+    let mut lots_by_key: HashMap<(String, u32), OpenLots> = HashMap::new();
+    let mut sorted_trades = raw_trades.to_vec();
+    sorted_trades.sort_by_key(|trade| (trade.timestamp, trade.id));
+    let mut record_id: u64 = 1;
+
+    for trade in &sorted_trades {
+        let key = (trade.strategy_id.clone(), trade.instrument_id);
+        let open_lots = lots_by_key.entry(key).or_default();
+        let symbol = market_data
+            .ids
+            .get(&trade.instrument_id)
+            .cloned()
+            .unwrap_or_else(|| format!("ID:{}", trade.instrument_id));
+        let mut remaining_qty = trade.quantity;
+
+        match trade.side {
+            crate::common::types::Side::Buy => {
+                while remaining_qty > 0 {
+                    let Some(short_lot) = open_lots.shorts.front_mut() else {
+                        break;
+                    };
+
+                    let matched_qty = remaining_qty.min(short_lot.qty);
+                    let pnl_scaled = (short_lot.price - trade.price) * matched_qty;
+
+                    closed_trades.push(TradeRecord {
+                        id: record_id,
+                        strategy_id: trade.strategy_id.clone(),
+                        symbol: symbol.clone(),
+                        side: "Sell".to_string(),
+                        entry_time: format_timestamp(short_lot.timestamp),
+                        exit_time: format_timestamp(trade.timestamp),
+                        qty: matched_qty,
+                        entry_price: (short_lot.price as f64) / (PRICE_SCALE as f64),
+                        exit_price: (trade.price as f64) / (PRICE_SCALE as f64),
+                        pnl: (pnl_scaled as f64) / (PRICE_SCALE as f64),
+                        stale_fill: false,
+                    });
+                    record_id += 1;
+
+                    short_lot.qty -= matched_qty;
+                    remaining_qty -= matched_qty;
+                    if short_lot.qty == 0 {
+                        open_lots.shorts.pop_front();
+                    }
+                }
+
+                if remaining_qty > 0 {
+                    open_lots.longs.push_back(OpenLot {
+                        qty: remaining_qty,
+                        price: trade.price,
+                        timestamp: trade.timestamp,
+                    });
+                }
+            }
+            crate::common::types::Side::Sell => {
+                while remaining_qty > 0 {
+                    let Some(long_lot) = open_lots.longs.front_mut() else {
+                        break;
+                    };
+
+                    let matched_qty = remaining_qty.min(long_lot.qty);
+                    let pnl_scaled = (trade.price - long_lot.price) * matched_qty;
+
+                    closed_trades.push(TradeRecord {
+                        id: record_id,
+                        strategy_id: trade.strategy_id.clone(),
+                        symbol: symbol.clone(),
+                        side: "Buy".to_string(),
+                        entry_time: format_timestamp(long_lot.timestamp),
+                        exit_time: format_timestamp(trade.timestamp),
+                        qty: matched_qty,
+                        entry_price: (long_lot.price as f64) / (PRICE_SCALE as f64),
+                        exit_price: (trade.price as f64) / (PRICE_SCALE as f64),
+                        pnl: (pnl_scaled as f64) / (PRICE_SCALE as f64),
+                        stale_fill: false,
+                    });
+                    record_id += 1;
+
+                    long_lot.qty -= matched_qty;
+                    remaining_qty -= matched_qty;
+                    if long_lot.qty == 0 {
+                        open_lots.longs.pop_front();
+                    }
+                }
+
+                if remaining_qty > 0 {
+                    open_lots.shorts.push_back(OpenLot {
+                        qty: remaining_qty,
+                        price: trade.price,
+                        timestamp: trade.timestamp,
+                    });
+                }
+            }
+        }
+    }
+
     closed_trades
 }
 

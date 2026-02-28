@@ -1,5 +1,6 @@
 use opt_bt::config::{Config, SweepConfig, StrategyConfig};
-use opt_bt::data::loader::DataLoader;
+use opt_bt::cache::ipc as cache_ipc;
+use opt_bt::cache::snapshot::load_market_data_snapshot;
 use opt_bt::engine::runner::Engine;
 use opt_bt::engine::sweep::run_sweep;
 use opt_bt::strategy::examples::{
@@ -19,6 +20,7 @@ use clap::{Parser, Subcommand};
 use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use opt_bt::common::types::PRICE_SCALE;
 
@@ -99,8 +101,8 @@ fn main() {
             );
             let data_path = resolve_data_path(config.data_dir.as_deref())
                 .unwrap_or_else(|err| panic!("Failed to resolve data path: {err}"));
-            let market_data = DataLoader::load_parquet(data_path.to_string_lossy().as_ref())
-                .unwrap_or_else(|err| panic!("Failed to load parquet data: {err}"));
+            let market_data = load_market_data_cache_only(data_path.to_string_lossy().as_ref())
+                .unwrap_or_else(|err| panic!("Failed to load market data from cache: {err}"));
             let strategy = build_portfolio_strategy(&config);
             let mut engine = Engine::new(strategy, market_data, config.initial_capital * PRICE_SCALE);
             if let Some(allocator) = build_allocator_from_config(&config, config.initial_capital * PRICE_SCALE) {
@@ -128,8 +130,8 @@ fn main() {
             );
             let data_path = resolve_data_path(sweep_cfg.base_config.data_dir.as_deref())
                 .unwrap_or_else(|err| panic!("Failed to resolve data path: {err}"));
-            let market_data = DataLoader::load_parquet(data_path.to_string_lossy().as_ref())
-                .unwrap_or_else(|err| panic!("Failed to load parquet data: {err}"));
+            let market_data = load_market_data_cache_only(data_path.to_string_lossy().as_ref())
+                .unwrap_or_else(|err| panic!("Failed to load market data from cache: {err}"));
             
             let results = run_sweep(
                 &sweep_cfg,
@@ -175,6 +177,20 @@ fn build_portfolio_strategy(config: &Config) -> PortfolioStrategy {
         .unwrap_or_else(|| panic!("unknown strategy kind '{}'", spec.kind));
     portfolio.add_strategy(&id, strategy);
     portfolio
+}
+
+fn load_market_data_cache_only(data_path: &str) -> anyhow::Result<Arc<opt_bt::data::models::MarketData>> {
+    let addr = std::env::var("BT_CACHE_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let ensured = cache_ipc::ensure_loaded(&addr, data_path, None)?;
+    let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
+    let market_data = load_market_data_snapshot(snapshot_path)?;
+    log::info!(
+        "Loaded market data via cache snapshot: cache_hit={} snapshot={}",
+        ensured.cache_hit,
+        ensured.entry.snapshot_path
+    );
+    Ok(market_data)
 }
 
 fn build_child_strategy(spec: &StrategyConfig) -> Option<Box<dyn Strategy + Send>> {

@@ -9,6 +9,14 @@ pub struct DataLoader;
 
 impl DataLoader {
     pub fn load_parquet(path: &str) -> Result<Arc<MarketData>> {
+        Self::load_parquet_impl(path, None)
+    }
+
+    pub fn load_parquet_range(path: &str, start_ts: i64, end_ts: i64) -> Result<Arc<MarketData>> {
+        Self::load_parquet_impl(path, Some((start_ts, end_ts)))
+    }
+
+    fn load_parquet_impl(path: &str, range: Option<(i64, i64)>) -> Result<Arc<MarketData>> {
         let file_path = Path::new(path);
         if !file_path.exists() {
             return Err(anyhow::anyhow!("Data file not found: {}", path));
@@ -42,6 +50,11 @@ impl DataLoader {
 
             let ts_val = df.column(ts_col)?.get(row_idx)?;
             let timestamp = anyvalue_to_epoch_seconds(ts_val)?;
+            if let Some((start_ts, end_ts)) = range {
+                if timestamp < start_ts || timestamp > end_ts {
+                    continue;
+                }
+            }
 
             let open_val = df.column(open_col)?.get(row_idx)?;
             let high_val = df.column(high_col)?.get(row_idx)?;

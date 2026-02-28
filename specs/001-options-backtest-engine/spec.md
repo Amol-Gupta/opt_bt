@@ -107,7 +107,6 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   [FR-004] **Order Lifecycle Tracking**: Each order MUST have a trackable status (Pending, Filled, Cancelled, Rejected) with timestamps for state transitions.
 -   [FR-005] **Slippage Implementation**: The system MUST support two distinct modes of slippage:
     1.  **Simulation Impact**: A configurable model (e.g., % of price) applied *during* order execution, altering the fill price and potentially triggering stops. This can be set to 0.
-    2.  **Post-Analysis Stress Test**: A reporting-layer adjustment allowing users to apply additional theoretical slippage to the final results without re-running the simulation, to analyze strategy robustness.
 -   [FR-006] **Pluggable Fill Model**: The system MUST define a `FillModel` trait to govern execution prices (e.g., for Stop orders).
     -   **Same-Bar Execution**: Fills MUST occur on the same bar timestamp where the condition is met.
     -   **Configurability**: Users MUST be able to choose between implementations (e.g., "Optimistic" at Stop Price, "Pessimistic" at Worst Case High/Low).
@@ -119,6 +118,7 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   [FR-019] **Fill Event Routing**: In portfolio mode, `on_fill` MUST be routed to exactly one strategy using `FillEvent.strategy_id`, with `order_id -> strategy_id` mapping as deterministic fallback.
 -   [FR-020] **Shared Account Semantics**: All child strategies in a portfolio MUST trade against a single shared account (cash, positions, realized PnL).
 -   [FR-021] **Unroutable Event Handling**: If an order/fill cannot be routed to a known strategy, system MUST log a warning and continue simulation deterministically.
+-   [FR-022] **Insufficient Capital Rejection**: The engine MUST reject buy orders when required cash exceeds currently available cash and emit a clear rejection warning containing required and available cash.
 
 ### 4.3 Data & Simulation
 -   [FR-010] **Event Processing**: The core loop MUST process events strictly by timestamp. Time advances only when no events remain for the current timestamp.
@@ -126,6 +126,11 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
     -   **Granularity**: The system MUST support 1-minute trade bars (OHLCV).
     -   **Optimization**: Data MUST be optimized for internal processing (e.g., pre-processing to binary/memory-mapped format).
 -   [FR-012] **Data Organization**: Market data MUST be organized internally by timestamp, then by instrument ID, to optimize for sequential access and cache locality.
+-   [FR-023] **Cross-Run In-Memory Dataset Cache**: The CLI/runtime MUST support a long-lived in-memory dataset cache process so repeated runs with the same dataset can skip disk ingestion and conversion.
+-   [FR-024] **Dataset Fingerprinting**: Cache identity MUST be based on dataset fingerprint metadata (at minimum path, size, and mtime; optional strong hash) so stale cache entries are deterministically invalidated when source data changes.
+-   [FR-025] **Run-Cache Handshake**: `bt run` and `bt sweep` MUST perform an `ensure_loaded` handshake with the cache service; on cache hit, runtime MUST reuse the resident dataset, and on cache miss, runtime MUST load once then register it for subsequent runs.
+-   [FR-026] **Cache Availability Fallback**: If cache service is unavailable, execution MUST continue via direct load path with explicit warning while preserving deterministic results.
+-   [FR-027] **Load/Cache Telemetry**: Reports and/or runtime diagnostics MUST include cache-hit status and timing breakdown (`load_ms`, `cache_lookup_ms`, `sim_ms`) for performance verification.
 
 ### 4.4 Reporting & Analytics
 -   [FR-013] **Performance Metrics**: The system MUST calculate and report (formulas and assumptions documented in data-model.md):
@@ -160,6 +165,7 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   [SC-002] **Order Correctness**: Verifiable order execution (e.g., Limit Buy only executes if Low <= Price).
 -   [SC-003] **Resource Utilization**: Parameter sweeps utilize >90% of available CPU cores on reference hardware.
 -   [SC-004] **Report Accuracy**: Generated reports match expected metrics for known inputs (verified via integration tests).
+-   [SC-005] **Cache Reuse Efficiency**: Repeated runs against an unchanged dataset show cache-hit reuse with near-zero reload overhead relative to cold load.
 
 ## 8. Questions / Clarifications
 -   [RESOLVED: Multi-Leg Orders] Independent Legs (User decision: 2026-02-24). The system models execution risk by treating legs as separate orders.
@@ -167,7 +173,7 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 ## 9. Clarifications
 ### Session 2026-02-24
 -   Q: Are multi-leg orders atomic? → A: No, each leg is executed independently.
--   Q: When is slippage applied? → A: Both. The system supports "During Simulation" (impacts fill price) and "Post-Simulation" (stress testing robustness).
+-   Q: When is slippage applied? → A: During simulation in the fill model; report output does not include stress-scenario results.
 -   Q: Portfolio Allocation Strategy? → A: Fixed Capital (INR) per strategy instance.
 -   Q: Stop Orders on 1-min bars? → A: Same-bar execution with pluggable fill logic (e.g., Optimistic vs Pessimistic). "Next Bar Open" logic is ruled out.
 
@@ -175,3 +181,7 @@ Development of a high-performance, event-driven backtesting engine for Indian ma
 -   Q: How is portfolio strategy modeled at runtime? → A: A `PortfolioStrategy` wraps many child strategies under one engine/account.
 -   Q: How are events routed? → A: Market events are broadcast to all child strategies; signal/order/fill events are routed by `strategy_id` (with `order_id` mapping fallback for fills).
 -   Q: How is capital handled? → A: Current model is one shared account for all child strategies; per-strategy allocation controls remain planned work.
+
+### Session 2026-02-27
+-   Q: How can repeated runs avoid dataset reload cost? → A: Add a long-lived in-RAM cache service and route `bt run`/`bt sweep` through fingerprint-based `ensure_loaded` checks.
+-   Q: What happens if cache is down? → A: Runtime falls back to normal load path and emits a warning.

@@ -1,9 +1,13 @@
 use clap::{Args, Parser, Subcommand};
+use opt_bt::cache::ipc as cache_ipc;
+use opt_bt::cache::{run_cache_server, CacheServerConfig};
+use opt_bt::config::SweepConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -46,6 +50,23 @@ enum Commands {
     ListStrategies(ListStrategiesArgs),
     #[command(about = "Clean generated files and cache artifacts")]
     Clean(CleanArgs),
+    #[command(about = "Manage the shared dataset cache service")]
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum CacheCommands {
+    #[command(about = "Run long-lived in-memory cache server")]
+    Server(CacheServerArgs),
+    #[command(about = "Preload dataset into cache (optionally scoped by date range)")]
+    Warm(CacheWarmArgs),
+    #[command(about = "Show cache server status")]
+    Status(CacheStatusArgs),
+    #[command(about = "Evict all cache entries for a dataset path")]
+    Evict(CacheEvictArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -79,7 +100,7 @@ struct ProjectInitArgs {
 }
 
 #[derive(Args, Debug)]
-#[command(after_help = "Configuration sourcing for bt run:\n  Required:\n    --project\n\n  Optional (can be sourced):\n    --strategy      <- BT_STRATEGY <- [run].default_strategy <- built-in default\n    --data          <- BT_DATA <- [run].data <- built-in default\n    --start-date    <- BT_START_DATE <- [run].start_date\n    --end-date      <- BT_END_DATE <- [run].end_date\n    --log-time-mode <- [run].log_time_mode <- simulation\n\n  Params merge order:\n    [run.params] then BT_PARAMS (comma-separated k=v) then --params (repeatable)\n\n  Overall precedence:\n    CLI > environment variables > bt.toml > defaults")]
+#[command(after_help = "Configuration sourcing for bt run:\n  Required:\n    --project\n    --start-date (or BT_START_DATE or [run].start_date)\n    --end-date (or BT_END_DATE or [run].end_date)\n\n  Optional (can be sourced):\n    --strategy      <- BT_STRATEGY <- [run].default_strategy <- built-in default\n    --data          <- BT_DATA <- [run].data <- built-in default\n    --log-time-mode <- [run].log_time_mode <- simulation\n\n  Params merge order:\n    [run.params] then BT_PARAMS (comma-separated k=v) then --params (repeatable)\n\n  Overall precedence:\n    CLI > environment variables > bt.toml > defaults")]
 struct RunArgs {
     #[arg(long, help = "Project name inside workspace")]
     project: String,
@@ -131,6 +152,42 @@ struct CleanArgs {
     generated_only: bool,
     #[arg(long, default_value_t = false, help = "Remove workspace cache artifacts")]
     all_cache: bool,
+}
+
+#[derive(Args, Debug)]
+struct CacheServerArgs {
+    #[arg(long, default_value = "127.0.0.1:7878", help = "Bind address for cache server")]
+    bind: String,
+    #[arg(long, default_value_t = false, help = "Include SHA256 in dataset fingerprinting")]
+    include_sha256: bool,
+}
+
+#[derive(Args, Debug)]
+struct CacheWarmArgs {
+    #[arg(long, help = "Input parquet data path")]
+    data: Option<String>,
+    #[arg(long, help = "Simulation start date (YYYY-MM-DD)")]
+    start_date: Option<String>,
+    #[arg(long, help = "Simulation end date (YYYY-MM-DD)")]
+    end_date: Option<String>,
+    #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
+    project: Option<String>,
+    #[arg(long, help = "Workspace root path")]
+    workspace: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct CacheStatusArgs {
+    #[arg(long, default_value_t = false, help = "Emit JSON output")]
+    json: bool,
+}
+
+#[derive(Args, Debug)]
+struct CacheEvictArgs {
+    #[arg(long, help = "Input parquet data path to evict")]
+    data: String,
+    #[arg(long, default_value_t = false, help = "Emit JSON output")]
+    json: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,6 +256,11 @@ impl_display_via_debug!(
     SweepArgs,
     ListStrategiesArgs,
     CleanArgs,
+    CacheCommands,
+    CacheServerArgs,
+    CacheWarmArgs,
+    CacheStatusArgs,
+    CacheEvictArgs,
     WorkspaceManifest,
     ProjectFile,
     ProjectSection,
@@ -229,7 +291,108 @@ fn run() -> Result<(), DynError> {
         Commands::Sweep(args) => run_sweep(args),
         Commands::ListStrategies(args) => list_strategies(args),
         Commands::Clean(args) => clean(args),
+        Commands::Cache { command } => match command {
+            CacheCommands::Server(args) => run_cache_server_cmd(args),
+            CacheCommands::Warm(args) => run_cache_warm_cmd(args),
+            CacheCommands::Status(args) => run_cache_status_cmd(args),
+            CacheCommands::Evict(args) => run_cache_evict_cmd(args),
+        },
     }
+}
+
+fn run_cache_server_cmd(args: CacheServerArgs) -> Result<(), DynError> {
+    let cfg = CacheServerConfig {
+        bind_addr: args.bind,
+        include_sha256: args.include_sha256,
+    };
+    run_cache_server(cfg)?;
+    Ok(())
+}
+
+fn run_cache_warm_cmd(args: CacheWarmArgs) -> Result<(), DynError> {
+    let mut run_cfg = RunSection::default();
+    if let Some(project) = args.project.as_deref() {
+        let root = discover_workspace_root(args.workspace.clone())?;
+        let manifest = load_workspace_manifest(&root)?;
+        let project_root = resolve_project_root(&root, &manifest, project)?;
+        let project_file = load_project_file(&project_root)?;
+        run_cfg = project_file.run.unwrap_or_default();
+    }
+
+    let env_data = std::env::var("BT_DATA").ok();
+    let env_start_date = std::env::var("BT_START_DATE").ok();
+    let env_end_date = std::env::var("BT_END_DATE").ok();
+
+    let data = args
+        .data
+        .or(env_data)
+        .or(run_cfg.data)
+        .ok_or_else(|| {
+            "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
+                .to_string()
+        })?;
+
+    if !Path::new(&data).exists() {
+        return Err(format!("configured data path does not exist: {data}").into());
+    }
+
+    let start_date = args.start_date.or(env_start_date).or(run_cfg.start_date);
+    let end_date = args.end_date.or(env_end_date).or(run_cfg.end_date);
+    let range = match (start_date.as_deref(), end_date.as_deref()) {
+        (None, None) => None,
+        (Some(start), Some(end)) => Some(opt_bt::config::parse_date_range_to_epoch(start, end)?),
+        _ => {
+            return Err(
+                "partial date range provided; pass both --start-date and --end-date (or set both in env/config)"
+                    .into(),
+            )
+        }
+    };
+
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let started = Instant::now();
+    let ensured = cache_ipc::ensure_loaded(&addr, &data, range)?;
+    let lookup_ms = started.elapsed().as_millis();
+
+    println!("cache warm complete");
+    println!("cache_addr={}", addr);
+    println!("data={}", data);
+    println!("cache_hit={}", ensured.cache_hit);
+    println!("cache_lookup_ms={}", lookup_ms);
+    println!("cache_load_ms={}", ensured.load_ms);
+    println!("snapshot={}", ensured.entry.snapshot_path);
+
+    Ok(())
+}
+
+fn run_cache_status_cmd(args: CacheStatusArgs) -> Result<(), DynError> {
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let status = cache_ipc::status(&addr)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&status)?);
+        return Ok(());
+    }
+
+    println!("cache_addr={}", addr);
+    println!("entry_count={}", status.entry_count);
+    for key in status.keys {
+        println!("key={}", key);
+    }
+    Ok(())
+}
+
+fn run_cache_evict_cmd(args: CacheEvictArgs) -> Result<(), DynError> {
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let result = cache_ipc::evict(&addr, &args.data)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
+
+    println!("cache_addr={}", addr);
+    println!("data={}", args.data);
+    println!("removed={}", result.removed);
+    Ok(())
 }
 
 fn workspace_init(args: WorkspaceInitArgs) -> Result<(), DynError> {
@@ -420,9 +583,10 @@ fn main() {{
             r#"use std::collections::BTreeMap;
 
 use {crate_name}::create_strategy_by_id;
+use opt_bt::cache::ipc as cache_ipc;
+use opt_bt::cache::snapshot::load_market_data_snapshot;
 use opt_bt::common::logging;
 use opt_bt::common::types::PRICE_SCALE;
-use opt_bt::data::loader::DataLoader;
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
 use opt_bt::strategy::portfolio::PortfolioStrategy;
@@ -441,6 +605,26 @@ fn parse_params(values: &[String]) -> Result<BTreeMap<String, String>, String> {
         params.insert(key.to_string(), value.to_string());
     }}
     Ok(params)
+}}
+
+fn load_market_data(
+    data_path: &str,
+    start_ts: i64,
+    end_ts: i64,
+) -> std::sync::Arc<opt_bt::data::models::MarketData> {{
+    let addr = std::env::var("BT_CACHE_ADDR")
+        .unwrap_or_else(|_| panic!("BT_CACHE_ADDR is required: backtest runs in cache-only mode"));
+    let ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
+        .unwrap_or_else(|err| panic!("Cache ENSURE failed for {{}} via {{}}: {{}}", data_path, addr, err));
+    let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
+    let md = load_market_data_snapshot(snapshot_path)
+        .unwrap_or_else(|err| panic!("Failed to load cache snapshot {{}}: {{}}", ensured.entry.snapshot_path, err));
+    log::info!(
+        "Loaded market data via cache snapshot: cache_hit={{}} snapshot={{}}",
+        ensured.cache_hit,
+        ensured.entry.snapshot_path
+    );
+    md
 }}
 
 fn main() {{
@@ -489,6 +673,31 @@ fn main() {{
     }}
 
     let strategy_id = strategy_id.unwrap_or_else(|| "{strategy_id}".to_string());
+    let resolved_start_date = start_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let resolved_end_date = end_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if resolved_start_date.is_none() || resolved_end_date.is_none() {{
+        let mut missing = Vec::new();
+        if resolved_start_date.is_none() {{
+            missing.push("start_date");
+        }}
+        if resolved_end_date.is_none() {{
+            missing.push("end_date");
+        }}
+        panic!(
+            "missing required backtest date range field(s): {{}}",
+            missing.join(", ")
+        );
+    }}
+    let resolved_start_date = resolved_start_date.expect("validated above");
+    let resolved_end_date = resolved_end_date.expect("validated above");
+    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(resolved_start_date, resolved_end_date)
+        .unwrap_or_else(|err| panic!("{{}}", err));
     let data = data.unwrap_or_else(|| "./sample_data/niftyIndex2024.sample.parquet".to_string());
 
     let params = parse_params(&raw_params).unwrap_or_else(|err| panic!("Failed to parse params: {{}}", err));
@@ -497,18 +706,20 @@ fn main() {{
         Some(&log_time_mode),
         log_file.as_deref(),
     );
+    if log_time_mode.eq_ignore_ascii_case("simulation") {{
+        logging::set_simulation_time(start_ts);
+    }}
     log::info!(
         "Backtest config: strategy={{}} start_date={{}} end_date={{}} data={{}} initial_capital={{}} log_level={{}} log_time_mode={{}}",
         strategy_id,
-        start_date.clone().unwrap_or_else(|| "<none>".to_string()),
-        end_date.clone().unwrap_or_else(|| "<none>".to_string()),
+        resolved_start_date,
+        resolved_end_date,
         data,
         initial_capital,
         log_level,
         log_time_mode
     );
-    let market_data = DataLoader::load_parquet(&data)
-        .unwrap_or_else(|err| panic!("Failed to load parquet data: {{}}", err));
+    let market_data = load_market_data(&data, start_ts, end_ts);
 
     let strategy = create_strategy_by_id(&strategy_id, &params)
         .unwrap_or_else(|| panic!("Unknown project strategy id: {{}}", strategy_id));
@@ -517,6 +728,7 @@ fn main() {{
     portfolio.add_strategy("default", strategy);
 
     let mut engine = Engine::new(portfolio, market_data, initial_capital * PRICE_SCALE);
+    engine.set_date_bounds(start_ts, end_ts);
     engine.init();
     engine.run();
 
@@ -611,6 +823,37 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     let start_date = args.start_date.or(env_start_date).or(run_cfg.start_date);
     let end_date = args.end_date.or(env_end_date).or(run_cfg.end_date);
 
+    let resolved_start_date = start_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let resolved_end_date = end_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if resolved_start_date.is_none() || resolved_end_date.is_none() {
+        let mut missing = Vec::new();
+        if resolved_start_date.is_none() {
+            missing.push("start_date (--start-date / BT_START_DATE / [run].start_date)");
+        }
+        if resolved_end_date.is_none() {
+            missing.push("end_date (--end-date / BT_END_DATE / [run].end_date)");
+        }
+        return Err(format!(
+            "missing required backtest date range field(s): {}",
+            missing.join(", ")
+        )
+        .into());
+    }
+    let resolved_start_date = resolved_start_date.expect("validated above").to_string();
+    let resolved_end_date = resolved_end_date.expect("validated above").to_string();
+    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(
+        &resolved_start_date,
+        &resolved_end_date,
+    )?;
+    let cache_timing = attempt_cache_ensure_loaded(&data, Some((start_ts, end_ts)))?;
+
+    let run_started = Instant::now();
     let status = if is_builtin_strategy {
         let engine_strategy = if strategy == "sample_strategy" {
             "random".to_string()
@@ -619,24 +862,21 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
         };
 
         let profile = engine_profile();
-        let mut cmd = Command::new("cargo");
+        let engine_manifest = engine_path.join("Cargo.toml");
+        let engine_exec = build_and_resolve_binary(&engine_manifest, engine_bin, &profile)?;
+        let mut cmd = Command::new(engine_exec);
         cmd.current_dir(engine_path)
-            .args(cargo_run_prefix(engine_bin, &profile))
-            .arg("run")
             .args(["--strategy", &engine_strategy])
             .args(["--data-dir", &data])
             .args(["--log-file", log_path.to_string_lossy().as_ref()])
             .args(["--report-path", report_path.to_string_lossy().as_ref()]);
+        cmd.env("BT_CACHE_ADDR", &cache_timing.cache_addr);
 
         if let Some(config) = args.config {
             cmd.args(["--config-file", config.to_string_lossy().as_ref()]);
         }
-        if let Some(ref resolved_start_date) = start_date {
-            cmd.args(["--start-date", resolved_start_date]);
-        }
-        if let Some(ref resolved_end_date) = end_date {
-            cmd.args(["--end-date", resolved_end_date]);
-        }
+        cmd.args(["--start-date", &resolved_start_date]);
+        cmd.args(["--end-date", &resolved_end_date]);
         cmd.args(["--log-time-mode", &log_time_mode]);
 
         for (key, value) in &merged_params {
@@ -653,10 +893,11 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
             &strategy,
             &data,
             run_cfg.initial_capital.unwrap_or(1_000_000),
+            Some(cache_timing.cache_addr.as_str()),
             &log_time_mode,
             &merged_params,
-            start_date,
-            end_date,
+            Some(resolved_start_date),
+            Some(resolved_end_date),
             &log_path,
             &report_path,
         )?
@@ -665,6 +906,27 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     if !status.success() {
         return Err(format!("bt run failed with status: {status}").into());
     }
+
+    let run_ms = run_started.elapsed().as_millis();
+    let timing = RuntimeTiming {
+        cache_server_reachable: cache_timing.cache_server_reachable,
+        cache_hit: cache_timing.cache_hit,
+        cache_lookup_ms: cache_timing.cache_lookup_ms,
+        cache_load_ms: cache_timing.cache_load_ms,
+        backtest_run_ms: run_ms,
+    };
+
+    if let Err(err) = inject_runtime_timing(&report_path, &timing) {
+        eprintln!("bt: warning: failed to inject runtime timing into report: {err}");
+    }
+
+    eprintln!(
+        "bt: timing cache_lookup_ms={} cache_load_ms={} cache_hit={} run_ms={}",
+        timing.cache_lookup_ms,
+        timing.cache_load_ms,
+        timing.cache_hit,
+        timing.backtest_run_ms
+    );
     eprintln!(
         "bt: artifacts written to {}",
         output_dir.to_string_lossy()
@@ -710,14 +972,26 @@ fn run_sweep(args: SweepArgs) -> Result<(), DynError> {
     let merged_params = merge_runtime_params(run_cfg.params, None, &[])?;
     validate_strategy_params(&strategy, &merged_params, &metadata)?;
 
+    if let Some(sweep_data_path) = extract_sweep_data_path(&args.config)? {
+        let cache_timing = attempt_cache_ensure_loaded(&sweep_data_path, None)?;
+        eprintln!(
+            "bt: sweep cache timing cache_lookup_ms={} cache_load_ms={} cache_hit={}",
+            cache_timing.cache_lookup_ms,
+            cache_timing.cache_load_ms,
+            cache_timing.cache_hit
+        );
+    }
+
     let profile = engine_profile();
     let mut cmd = Command::new("cargo");
+    let cache_addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
     let status = cmd
         .current_dir(engine_path)
         .args(cargo_run_prefix(engine_bin, &profile))
         .arg("sweep")
         .arg("--config")
         .arg(args.config)
+        .env("BT_CACHE_ADDR", cache_addr)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -874,6 +1148,7 @@ fn run_project_strategy(
     strategy_id: &str,
     data: &str,
     initial_capital: i64,
+    cache_addr: Option<&str>,
     log_time_mode: &str,
     params: &BTreeMap<String, String>,
     start_date: Option<String>,
@@ -894,13 +1169,11 @@ fn run_project_strategy(
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or_else(|_| data.to_string());
 
-    let mut cmd = Command::new("cargo");
-    cmd.arg("run")
-        .arg("--manifest-path")
-        .arg(&strategy_manifest)
-        .arg("--bin")
-        .arg("bt_run_project")
-        .arg("--")
+    let profile = engine_profile();
+    let exec_path = build_and_resolve_binary(&strategy_manifest, "bt_run_project", &profile)?;
+
+    let mut cmd = Command::new(exec_path);
+    cmd
         .args(["--strategy-id", strategy_id])
         .args(["--data", &data_path])
         .args(["--initial-capital", &initial_capital.to_string()])
@@ -908,6 +1181,10 @@ fn run_project_strategy(
         .args(["--log-file", log_path.to_string_lossy().as_ref()])
         .args(["--report-path", report_path.to_string_lossy().as_ref()])
         .args(["--log-level", "info"]);
+
+    if let Some(addr) = cache_addr {
+        cmd.env("BT_CACHE_ADDR", addr);
+    }
 
     if let Some(ref value) = start_date {
         cmd.args(["--start-date", value]);
@@ -1297,4 +1574,113 @@ fn cargo_run_prefix<'a>(engine_bin: &'a str, profile: &str) -> Vec<&'a str> {
     args.push(engine_bin);
     args.push("--");
     args
+}
+
+fn build_and_resolve_binary(manifest_path: &Path, bin_name: &str, profile: &str) -> Result<PathBuf, DynError> {
+    let manifest_dir = manifest_path
+        .parent()
+        .ok_or_else(|| format!("invalid manifest path: {}", manifest_path.display()))?;
+    let profile_dir = if profile == "release" { "release" } else { "debug" };
+    let candidate = manifest_dir.join("target").join(profile_dir).join(bin_name);
+
+    let force_build = std::env::var("BT_FORCE_BUILD")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+
+    if candidate.exists() && !force_build {
+        return Ok(candidate);
+    }
+
+    let mut build_cmd = Command::new("cargo");
+    build_cmd
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(manifest_path)
+        .arg("--bin")
+        .arg(bin_name);
+
+    if profile == "release" {
+        build_cmd.arg("--release");
+    }
+
+    let status = build_cmd
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+    if !status.success() {
+        return Err(format!("cargo build failed for {} (status: {status})", bin_name).into());
+    }
+
+    if !candidate.exists() {
+        return Err(format!("compiled binary not found: {}", candidate.display()).into());
+    }
+    Ok(candidate)
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeTiming {
+    cache_server_reachable: bool,
+    cache_hit: bool,
+    cache_lookup_ms: u128,
+    cache_load_ms: u128,
+    backtest_run_ms: u128,
+}
+
+#[derive(Debug, Clone)]
+struct CacheTiming {
+    cache_addr: String,
+    cache_server_reachable: bool,
+    cache_hit: bool,
+    cache_lookup_ms: u128,
+    cache_load_ms: u128,
+}
+
+fn attempt_cache_ensure_loaded(
+    data_path: &str,
+    range: Option<(i64, i64)>,
+) -> Result<CacheTiming, DynError> {
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let started = Instant::now();
+    match cache_ipc::ensure_loaded(&addr, data_path, range) {
+        Ok(result) => Ok(CacheTiming {
+            cache_addr: addr,
+            cache_server_reachable: true,
+            cache_hit: result.cache_hit,
+            cache_lookup_ms: started.elapsed().as_millis(),
+            cache_load_ms: result.load_ms,
+        }),
+        Err(err) => {
+            Err(format!(
+                "cache-server is required in cache-only mode: ENSURE failed at {} for {} ({})",
+                addr, data_path, err
+            )
+            .into())
+        }
+    }
+}
+
+fn inject_runtime_timing(report_path: &Path, timing: &RuntimeTiming) -> Result<(), DynError> {
+    if !report_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(report_path)?;
+    let mut value: serde_json::Value = serde_json::from_str(&content)?;
+
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(());
+    };
+    obj.insert(
+        "runtime_timing".to_string(),
+        serde_json::to_value(timing).unwrap_or_else(|_| serde_json::json!({})),
+    );
+
+    fs::write(report_path, serde_json::to_string_pretty(&value)?)?;
+    Ok(())
+}
+
+fn extract_sweep_data_path(config_path: &Path) -> Result<Option<String>, DynError> {
+    let sweep: SweepConfig = SweepConfig::from_file(config_path.to_string_lossy().as_ref())?;
+    Ok(sweep.base_config.data_dir)
 }

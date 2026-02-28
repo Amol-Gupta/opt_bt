@@ -69,6 +69,9 @@
 - [X] T028a Profile and optimize hot path (Event Loop) using `cargo flamegraph` to verify <2s target; include allocation profiling via `dhat` or `heaptrack`
 - [X] T029 Finalize documentation and API examples in `README.md`
 - [X] T029b [US1,US2,US3] Embed reproducibility metadata in JSON reports (strategy version, parameters, engine version, dataset SHA256) in `src/reporting/reproducibility.rs`
+- [X] T051 [US1] Reject buy orders on insufficient available cash in `src/common/context.rs` and surface rejection warning diagnostics
+- [X] T052 [US1] Remove stress-scenario section from JSON/HTML report output in `src/reporting/json.rs` and `src/reporting/html.rs`
+- [X] T053 [US1] Reconstruct closed trades with proper entry/exit pairing in `src/reporting/json.rs` (avoid per-fill entry=exit artifacts)
 
 ## Phase 7: [US1/US3] Day-Boundary Instrument Subscription
 - [X] T030 [US1] Define option instrument domain model and identifiers for deterministic subscription in `src/data/models.rs` and `src/common/types.rs`
@@ -97,6 +100,17 @@
 - [x] T048 [US5] Implement typed parameter validation from strategy metadata before run/sweep launch
 - [x] T049 [US5] Add migration compatibility mode: retain stage-1 static registration fallback behind project flag
 - [x] T050 [US5] Add integration tests for mixed mode projects (stage-1 fallback + stage-2 registry)
+
+## Phase 10: [US6] Cross-Run In-Memory Dataset Cache
+- [x] T054 [US6] Add `bt cache-server` command and long-lived cache runtime in `src/bin/bt.rs` and `src/cache/mod.rs`
+- [x] T055 [US6] Implement dataset fingerprint computation (path/size/mtime + optional SHA256) in `src/data/fingerprint.rs`
+- [x] T056 [US6] Implement cache store for resident `Arc<MarketData>` keyed by fingerprint in `src/cache/store.rs`
+- [x] T057 [US6] Add cache control API (`ensure_loaded`, `status`, `evict`) and IPC contract in `src/cache/ipc.rs` and `specs/001-options-backtest-engine/contracts/cache-api.md`
+- [x] T058 [US6] Integrate cache handshake into `bt run` path with deterministic fallback-to-load when service unavailable in `src/bin/bt.rs`
+- [x] T059 [US6] Integrate cache handshake into `bt sweep` path with shared warm dataset reuse in `src/bin/bt.rs` and `src/engine/sweep.rs`
+- [x] T060 [US6] Emit performance telemetry (`cache_hit`, `cache_lookup_ms`, `load_ms`, `sim_ms`) in runtime logs and JSON report metadata in `src/reporting/json.rs`
+- [x] T061 [US6] Add integration tests for cold miss, warm hit, and invalidation-on-file-change flows in `tests/cache_integration.rs`
+- [x] T062 [US6] Add benchmark harness comparing cold-load vs warm-cache repeated runs in `benches/cache_bench.rs`
 
 ## Implementation Strategy
 - **MVP (Phase 1-3)**: Focus on getting a single strategy to run correctly with `polars` data loading and `ftlog`. 

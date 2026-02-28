@@ -583,6 +583,7 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
     let (day_start_ts, day_end_ts) = opt_bt::config::parse_date_range_to_epoch(&args.date, &args.date)?;
     let market_data = load_market_data_for_query(&data, Some((day_start_ts, day_end_ts)))?;
     let query_ts = parse_date_time_utc_epoch(&args.date, &args.time)?;
+    let query_minute_end_ts = query_ts + 59;
     let query_yyyymmdd = yyyymmdd_from_date(&args.date)?;
 
     let expiry = match args.expiry {
@@ -638,10 +639,11 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
     });
 
     println!(
-        "slice date={} time={} ts={} expiry={} underlying={} strike_range=[{}, {}] fill_forward={}",
+        "slice date={} time={} ts_start={} ts_end={} expiry={} underlying={} strike_range=[{}, {}] fill_forward={}",
         args.date,
         args.time,
         query_ts,
+        query_minute_end_ts,
         expiry,
         args.underlying,
         min_strike,
@@ -653,8 +655,17 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
     let mut rows = 0usize;
     for (strike, option_type, instrument_id, symbol) in contracts {
         let exact = market_data.get_bar_at(instrument_id, query_ts);
+        let minute_match = if exact.is_none() {
+            market_data
+                .get_bar_at_or_before(instrument_id, query_minute_end_ts)
+                .filter(|bar| bar.timestamp >= query_ts)
+        } else {
+            None
+        };
         let bar_opt = if exact.is_some() {
             exact
+        } else if minute_match.is_some() {
+            minute_match
         } else if args.fill_forward {
             market_data.get_bar_at_or_before(instrument_id, query_ts)
         } else {
@@ -663,6 +674,8 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
 
         let status = if exact.is_some() {
             "exact"
+        } else if minute_match.is_some() {
+            "minute"
         } else if bar_opt.is_some() {
             "ffill"
         } else {

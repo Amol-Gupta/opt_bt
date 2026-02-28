@@ -23,6 +23,8 @@ __pycache__/
 venv/
 dist/
 *.egg-info/
+.rustc_info.json
+CACHEDIR.TAG
 
 
 # Added by cargo

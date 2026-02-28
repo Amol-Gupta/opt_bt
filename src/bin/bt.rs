@@ -1,12 +1,16 @@
 use clap::{Args, Parser, Subcommand};
 use opt_bt::cache::ipc as cache_ipc;
+use opt_bt::cache::snapshot::load_market_data_snapshot;
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
+use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
+use opt_bt::data::models::{Bar, MarketData};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::Instant;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
@@ -55,6 +59,11 @@ enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
+    #[command(about = "Inspect market data bars from cache snapshots")]
+    Data {
+        #[command(subcommand)]
+        command: DataCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -67,6 +76,16 @@ enum CacheCommands {
     Status(CacheStatusArgs),
     #[command(about = "Evict all cache entries for a dataset path")]
     Evict(CacheEvictArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum DataCommands {
+    #[command(about = "Print index bars for one day/multiple days or a minute window")]
+    Index(DataIndexArgs),
+    #[command(about = "Print bars for a specific option contract across a timespan")]
+    Contract(DataContractArgs),
+    #[command(about = "Print option price timeslice for strike band at a given time")]
+    Slice(DataSliceArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -190,6 +209,72 @@ struct CacheEvictArgs {
     json: bool,
 }
 
+#[derive(Args, Debug)]
+struct DataIndexArgs {
+    #[arg(long, help = "Input parquet data path")]
+    data: Option<String>,
+    #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
+    project: Option<String>,
+    #[arg(long, help = "Workspace root path")]
+    workspace: Option<PathBuf>,
+    #[arg(long, default_value = "NIFTY 50", help = "Index symbol")]
+    symbol: String,
+    #[arg(long, help = "Single date (YYYY-MM-DD)")]
+    date: Option<String>,
+    #[arg(long, help = "Start date (YYYY-MM-DD)")]
+    start_date: Option<String>,
+    #[arg(long, help = "End date (YYYY-MM-DD)")]
+    end_date: Option<String>,
+    #[arg(long, help = "Minute filter (HH:MM)")]
+    minute: Option<String>,
+    #[arg(long, default_value_t = 0, help = "If --minute set, include +/- N minutes")]
+    window_minutes: i64,
+}
+
+#[derive(Args, Debug)]
+struct DataContractArgs {
+    #[arg(long, help = "Input parquet data path")]
+    data: Option<String>,
+    #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
+    project: Option<String>,
+    #[arg(long, help = "Workspace root path")]
+    workspace: Option<PathBuf>,
+    #[arg(long, help = "Contract symbol (example: NIFTY13JUN2423400CE)")]
+    symbol: String,
+    #[arg(long, help = "Start date (YYYY-MM-DD)")]
+    start_date: String,
+    #[arg(long, help = "End date (YYYY-MM-DD)")]
+    end_date: String,
+    #[arg(long, default_value = "00:00", help = "Daily start time (HH:MM)")]
+    start_time: String,
+    #[arg(long, default_value = "23:59", help = "Daily end time (HH:MM)")]
+    end_time: String,
+}
+
+#[derive(Args, Debug)]
+struct DataSliceArgs {
+    #[arg(long, help = "Input parquet data path")]
+    data: Option<String>,
+    #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
+    project: Option<String>,
+    #[arg(long, help = "Workspace root path")]
+    workspace: Option<PathBuf>,
+    #[arg(long, help = "Date (YYYY-MM-DD)")]
+    date: String,
+    #[arg(long, help = "Time (HH:MM)")]
+    time: String,
+    #[arg(long, help = "Center strike in points")]
+    center_strike: i64,
+    #[arg(long, default_value_t = 300, help = "Strike band half-width in points")]
+    points: i64,
+    #[arg(long, default_value = "NIFTY", help = "Option underlying prefix")]
+    underlying: String,
+    #[arg(long, help = "Optional expiry yyyymmdd (defaults to nearest weekly expiry)")]
+    expiry: Option<i32>,
+    #[arg(long, default_value_t = false, help = "Fill forward missing bars from previous bar")]
+    fill_forward: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WorkspaceManifest {
     projects_dir: Option<String>,
@@ -257,10 +342,14 @@ impl_display_via_debug!(
     ListStrategiesArgs,
     CleanArgs,
     CacheCommands,
+    DataCommands,
     CacheServerArgs,
     CacheWarmArgs,
     CacheStatusArgs,
     CacheEvictArgs,
+    DataIndexArgs,
+    DataContractArgs,
+    DataSliceArgs,
     WorkspaceManifest,
     ProjectFile,
     ProjectSection,
@@ -296,6 +385,11 @@ fn run() -> Result<(), DynError> {
             CacheCommands::Warm(args) => run_cache_warm_cmd(args),
             CacheCommands::Status(args) => run_cache_status_cmd(args),
             CacheCommands::Evict(args) => run_cache_evict_cmd(args),
+        },
+        Commands::Data { command } => match command {
+            DataCommands::Index(args) => run_data_index_cmd(args),
+            DataCommands::Contract(args) => run_data_contract_cmd(args),
+            DataCommands::Slice(args) => run_data_slice_cmd(args),
         },
     }
 }
@@ -393,6 +487,370 @@ fn run_cache_evict_cmd(args: CacheEvictArgs) -> Result<(), DynError> {
     println!("data={}", args.data);
     println!("removed={}", result.removed);
     Ok(())
+}
+
+fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
+    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let (start_date, end_date) = resolve_query_dates(args.date, args.start_date, args.end_date)?;
+    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(&start_date, &end_date)?;
+    let market_data = load_market_data_for_query(&data, Some((start_ts, end_ts)))?;
+
+    let instrument_id = market_data
+        .get_id(&args.symbol)
+        .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
+    let bars = market_data
+        .bars
+        .get(&instrument_id)
+        .ok_or_else(|| format!("no bars available for symbol: {}", args.symbol))?;
+
+    let minute_seconds = match args.minute.as_deref() {
+        Some(value) => Some(parse_hhmm_to_seconds(value)?),
+        None => None,
+    };
+    let window_seconds = args.window_minutes.max(0) * 60;
+
+    println!("symbol={} data={} start_date={} end_date={}", args.symbol, data, start_date, end_date);
+    println!("timestamp             date       time   open      high      low       close     volume");
+
+    let mut count = 0usize;
+    for bar in bars {
+        if bar.timestamp < start_ts || bar.timestamp > end_ts {
+            continue;
+        }
+
+        if let Some(target_seconds) = minute_seconds {
+            let sod = bar.timestamp.rem_euclid(86_400);
+            if (sod - target_seconds).abs() > window_seconds {
+                continue;
+            }
+        }
+
+        print_bar_row(bar);
+        count += 1;
+    }
+
+    println!("rows={}", count);
+    Ok(())
+}
+
+fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
+    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(&args.start_date, &args.end_date)?;
+    let market_data = load_market_data_for_query(&data, Some((start_ts, end_ts)))?;
+
+    let instrument_id = market_data
+        .get_id(&args.symbol)
+        .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
+    let bars = market_data
+        .bars
+        .get(&instrument_id)
+        .ok_or_else(|| format!("no bars available for symbol: {}", args.symbol))?;
+
+    let start_sod = parse_hhmm_to_seconds(&args.start_time)?;
+    let end_sod = parse_hhmm_to_seconds(&args.end_time)?;
+
+    println!(
+        "symbol={} data={} start_date={} end_date={} start_time={} end_time={}",
+        args.symbol,
+        data,
+        args.start_date,
+        args.end_date,
+        args.start_time,
+        args.end_time
+    );
+    println!("timestamp             date       time   open      high      low       close     volume");
+
+    let mut count = 0usize;
+    for bar in bars {
+        if bar.timestamp < start_ts || bar.timestamp > end_ts {
+            continue;
+        }
+        let sod = bar.timestamp.rem_euclid(86_400);
+        if sod < start_sod || sod > end_sod {
+            continue;
+        }
+
+        print_bar_row(bar);
+        count += 1;
+    }
+
+    println!("rows={}", count);
+    Ok(())
+}
+
+fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
+    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let (day_start_ts, day_end_ts) = opt_bt::config::parse_date_range_to_epoch(&args.date, &args.date)?;
+    let market_data = load_market_data_for_query(&data, Some((day_start_ts, day_end_ts)))?;
+    let query_ts = parse_date_time_utc_epoch(&args.date, &args.time)?;
+    let query_yyyymmdd = yyyymmdd_from_date(&args.date)?;
+
+    let expiry = match args.expiry {
+        Some(value) => value,
+        None => nearest_weekly_expiry(&market_data, &args.underlying, query_yyyymmdd)
+            .ok_or_else(|| {
+                format!(
+                    "no nearest weekly expiry found for underlying={} date={}",
+                    args.underlying, args.date
+                )
+            })?,
+    };
+
+    let min_strike = args.center_strike - args.points;
+    let max_strike = args.center_strike + args.points;
+
+    let mut contracts: Vec<(i64, OptionType, u32, String)> = market_data
+        .instrument_meta
+        .values()
+        .filter_map(|instrument| {
+            let option = instrument.option.as_ref()?;
+            if option.expiry_yyyymmdd != expiry {
+                return None;
+            }
+            if !option
+                .underlying
+                .to_ascii_uppercase()
+                .starts_with(&args.underlying.to_ascii_uppercase())
+            {
+                return None;
+            }
+
+            let strike_points = option.strike / PRICE_SCALE;
+            if strike_points < min_strike || strike_points > max_strike {
+                return None;
+            }
+
+            Some((
+                strike_points,
+                option.option_type,
+                instrument.id,
+                instrument.symbol.clone(),
+            ))
+        })
+        .collect();
+
+    contracts.sort_by_key(|(strike, option_type, _, _)| {
+        let type_rank = match option_type {
+            OptionType::Call => 0,
+            OptionType::Put => 1,
+        };
+        (*strike, type_rank)
+    });
+
+    println!(
+        "slice date={} time={} ts={} expiry={} underlying={} strike_range=[{}, {}] fill_forward={}",
+        args.date,
+        args.time,
+        query_ts,
+        expiry,
+        args.underlying,
+        min_strike,
+        max_strike,
+        args.fill_forward
+    );
+    println!("strike  type symbol                      status      bar_time              close     open      high      low       vol");
+
+    let mut rows = 0usize;
+    for (strike, option_type, instrument_id, symbol) in contracts {
+        let exact = market_data.get_bar_at(instrument_id, query_ts);
+        let bar_opt = if exact.is_some() {
+            exact
+        } else if args.fill_forward {
+            market_data.get_bar_at_or_before(instrument_id, query_ts)
+        } else {
+            None
+        };
+
+        let status = if exact.is_some() {
+            "exact"
+        } else if bar_opt.is_some() {
+            "ffill"
+        } else {
+            "missing"
+        };
+
+        let type_label = match option_type {
+            OptionType::Call => "CE",
+            OptionType::Put => "PE",
+        };
+
+        if let Some(bar) = bar_opt {
+            println!(
+                "{:<7} {:<4} {:<27} {:<10} {:<20} {:<9} {:<9} {:<9} {:<9} {:<8}",
+                strike,
+                type_label,
+                symbol,
+                status,
+                format_ts_utc(bar.timestamp),
+                fmt_price(bar.close),
+                fmt_price(bar.open),
+                fmt_price(bar.high),
+                fmt_price(bar.low),
+                bar.volume
+            );
+        } else {
+            println!(
+                "{:<7} {:<4} {:<27} {:<10} {:<20} {:<9} {:<9} {:<9} {:<9} {:<8}",
+                strike,
+                type_label,
+                symbol,
+                status,
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-"
+            );
+        }
+        rows += 1;
+    }
+
+    println!("rows={}", rows);
+    Ok(())
+}
+
+fn resolve_data_for_query(
+    data: Option<String>,
+    project: Option<&str>,
+    workspace: Option<PathBuf>,
+) -> Result<String, DynError> {
+    if let Some(path) = data {
+        if !Path::new(&path).exists() {
+            return Err(format!("configured data path does not exist: {path}").into());
+        }
+        return Ok(path);
+    }
+
+    if let Some(project_name) = project {
+        let root = discover_workspace_root(workspace)?;
+        let manifest = load_workspace_manifest(&root)?;
+        let project_root = resolve_project_root(&root, &manifest, project_name)?;
+        let project_file = load_project_file(&project_root)?;
+        if let Some(path) = project_file.run.and_then(|r| r.data) {
+            if !Path::new(&path).exists() {
+                return Err(format!("configured data path does not exist: {path}").into());
+            }
+            return Ok(path);
+        }
+    }
+
+    Err("missing data path: provide --data or --project with [run].data".into())
+}
+
+fn resolve_query_dates(
+    date: Option<String>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+) -> Result<(String, String), DynError> {
+    if let Some(single_date) = date {
+        return Ok((single_date.clone(), single_date));
+    }
+
+    match (start_date, end_date) {
+        (Some(start), Some(end)) => Ok((start, end)),
+        _ => Err("provide either --date or both --start-date and --end-date".into()),
+    }
+}
+
+fn load_market_data_for_query(
+    data_path: &str,
+    range: Option<(i64, i64)>,
+) -> Result<Arc<MarketData>, DynError> {
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let ensured = cache_ipc::ensure_loaded(&addr, data_path, range)?;
+    let snapshot_path = Path::new(&ensured.entry.snapshot_path);
+    Ok(load_market_data_snapshot(snapshot_path)?)
+}
+
+fn parse_hhmm_to_seconds(value: &str) -> Result<i64, DynError> {
+    let mut parts = value.split(':');
+    let hour = parts
+        .next()
+        .ok_or_else(|| format!("invalid HH:MM value: {value}"))?
+        .parse::<i64>()?;
+    let minute = parts
+        .next()
+        .ok_or_else(|| format!("invalid HH:MM value: {value}"))?
+        .parse::<i64>()?;
+    if parts.next().is_some() || !(0..=23).contains(&hour) || !(0..=59).contains(&minute) {
+        return Err(format!("invalid HH:MM value: {value}").into());
+    }
+    Ok(hour * 3600 + minute * 60)
+}
+
+fn parse_date_time_utc_epoch(date: &str, time: &str) -> Result<i64, DynError> {
+    let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+    let parsed_time = chrono::NaiveTime::parse_from_str(time, "%H:%M")?;
+    Ok(parsed_date.and_time(parsed_time).and_utc().timestamp())
+}
+
+fn yyyymmdd_from_date(date: &str) -> Result<i32, DynError> {
+    Ok(chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")?
+        .format("%Y%m%d")
+        .to_string()
+        .parse::<i32>()?)
+}
+
+fn nearest_weekly_expiry(market_data: &MarketData, underlying: &str, today_yyyymmdd: i32) -> Option<i32> {
+    let today = yyyymmdd_to_date(today_yyyymmdd)?;
+    let underlying_upper = underlying.to_ascii_uppercase();
+
+    market_data
+        .instrument_meta
+        .values()
+        .filter_map(|instrument| {
+            let option = instrument.option.as_ref()?;
+            if !option
+                .underlying
+                .to_ascii_uppercase()
+                .starts_with(&underlying_upper)
+            {
+                return None;
+            }
+
+            let expiry = yyyymmdd_to_date(option.expiry_yyyymmdd)?;
+            let dte = (expiry - today).num_days();
+            if !(0..=7).contains(&dte) {
+                return None;
+            }
+            Some(option.expiry_yyyymmdd)
+        })
+        .min()
+}
+
+fn yyyymmdd_to_date(value: i32) -> Option<chrono::NaiveDate> {
+    let year = value / 10_000;
+    let month = ((value / 100) % 100) as u32;
+    let day = (value % 100) as u32;
+    chrono::NaiveDate::from_ymd_opt(year, month, day)
+}
+
+fn format_ts_utc(timestamp: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| timestamp.to_string())
+}
+
+fn fmt_price(price: i64) -> String {
+    format!("{:.2}", price as f64 / PRICE_SCALE as f64)
+}
+
+fn print_bar_row(bar: &Bar) {
+    let ts = format_ts_utc(bar.timestamp);
+    let date = &ts[0..10];
+    let time = &ts[11..19];
+    println!(
+        "{:<20} {:<10} {:<8} {:<9} {:<9} {:<9} {:<9} {:<8}",
+        ts,
+        date,
+        time,
+        fmt_price(bar.open),
+        fmt_price(bar.high),
+        fmt_price(bar.low),
+        fmt_price(bar.close),
+        bar.volume
+    );
 }
 
 fn workspace_init(args: WorkspaceInitArgs) -> Result<(), DynError> {

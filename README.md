@@ -80,6 +80,40 @@ bt <command> --help
 - `bt cache evict --data <path> [--json]`
   - Removes cache entries for a dataset path.
 
+#### `bt data`
+- `bt data index --data <path> --symbol <name> [--date YYYY-MM-DD | --start-date ... --end-date ...] [--minute HH:MM] [--window-minutes N]`
+  - Prints index bars for a symbol (single day or date range).
+- `bt data contract --data <path> --symbol <option_symbol> --start-date ... --end-date ... [--start-time HH:MM] [--end-time HH:MM]`
+  - Prints bars for a specific option contract over a time window.
+- `bt data slice --data <path> --date YYYY-MM-DD --time HH:MM --center-strike <strike> --points <N> [--expiry YYYY-MM-DD] [--fill-forward]`
+  - Prints CE/PE strike ladder around a center strike at one timestamp.
+
+Examples:
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt data index \
+  --data /quant/nifty_with_options.parquet \
+  --symbol "NIFTY 50" \
+  --date 2024-06-12 \
+  --minute 11:00 \
+  --window-minutes 1
+
+BT_CACHE_ADDR=127.0.0.1:7878 bt data contract \
+  --data /quant/nifty_with_options.parquet \
+  --symbol NIFTY13JUN2423400CE \
+  --start-date 2024-06-12 \
+  --end-date 2024-06-12 \
+  --start-time 10:55 \
+  --end-time 11:10
+
+BT_CACHE_ADDR=127.0.0.1:7878 bt data slice \
+  --data /quant/nifty_with_options.parquet \
+  --date 2024-06-12 \
+  --time 11:00 \
+  --center-strike 23450 \
+  --points 300 \
+  --fill-forward
+```
+
 ## End-to-end workflow
 
 This is the recommended flow to create workspace, create strategy project, warm cache, run backtest, and inspect results.

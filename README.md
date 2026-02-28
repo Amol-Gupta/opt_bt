@@ -13,143 +13,161 @@ High-performance event-driven options backtesting engine in Rust.
 cargo build --release
 ```
 
-## CLI
+## `bt` CLI (workspace-oriented)
+
+Build once:
 ```bash
-cargo run --release -- --help
+cargo build --release --bin bt
 ```
 
-Current commands:
-- `run`
-- `sweep --config <file>`
-
-## Run a single strategy
-### Nearest-expiry Nifty straddle (day lifecycle + event logging)
+Show command help:
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
-  --start-date 2024-04-01 \
-  --end-date 2024-04-30 \
-  --strategy nifty_nearest_expiry_straddle \
-  --params index_symbol=NIFTY\ 50 \
-  --params qty=1
+bt --help
+bt <command> --help
 ```
 
-This strategy:
-- subscribes nearest-expiry Nifty option chain at market day open
-- sells ATM straddle at 10:00
-- exits at 11:00
-- unsubscribes chain after market close
-- logs every received callback/event
+### Command reference
 
-### ATM straddle baseline
+#### `bt workspace`
+- `bt workspace init [--path <dir>] [--force]`
+- Initializes workspace metadata and folders:
+  - `.bt/workspace.toml`
+  - `.bt/cache/`
+  - `projects/`
+
+#### `bt project`
+- `bt project init [--workspace <dir>] [--force] <name>`
+- Scaffolds a project under `projects/<name>/` with:
+  - `bt.toml`
+  - strategy crate (`strategy/`)
+  - generated glue (`generated/`)
+
+#### `bt run`
+- `bt run --project <name> [options]`
+- Runs a single backtest for a project strategy.
+- Key options:
+  - `--workspace <dir>`
+  - `--strategy <id>`
+  - `--data <parquet_path>`
+  - `--start-date YYYY-MM-DD`
+  - `--end-date YYYY-MM-DD`
+  - `--params key=value` (repeatable)
+  - `--log-time-mode simulation|wall`
+- Writes run artifacts into:
+  - `projects/<name>/backtests/<strategy>_<timestamp>_<run_id>/`
+
+#### `bt sweep`
+- `bt sweep --project <name> --config <file> [--workspace <dir>]`
+- Runs a parameter sweep based on sweep config JSON/TOML input.
+
+#### `bt list-strategies`
+- `bt list-strategies --project <name> [--workspace <dir>] [--json]`
+- Lists discoverable strategy IDs in a project strategy crate.
+
+#### `bt clean`
+- `bt clean [--workspace <dir>] [--project <name>] [--generated-only] [--all-cache]`
+- Cleanup utility:
+  - `--generated-only`: remove generated project glue
+  - `--all-cache`: remove workspace cache artifacts
+
+#### `bt cache`
+- `bt cache server [--bind <host:port>] [--include-sha256]`
+  - Starts long-lived in-memory cache service.
+- `bt cache warm [--data <path>] [--start-date ... --end-date ...] [--project <name>] [--workspace <dir>]`
+  - Preloads data into cache (and snapshot) for faster warm runs.
+- `bt cache status [--json]`
+  - Shows cache entry count and keys.
+- `bt cache evict --data <path> [--json]`
+  - Removes cache entries for a dataset path.
+
+## End-to-end workflow
+
+This is the recommended flow to create workspace, create strategy project, warm cache, run backtest, and inspect results.
+
+### 1) Create workspace
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
-  --strategy atm_straddle \
-  --params index_symbol=NIFTY\ 50 \
-  --params qty=1
+bt workspace init --path ./demo_ws
 ```
 
-### SMA NIFTY50 strategy
+### 2) Create strategy project
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
-  --strategy sma_nifty50 \
-  --params index_symbol=NIFTY\ 50 \
-  --params qty=1 \
-  --params short_period=20 \
-  --params long_period=50
+bt project init --workspace ./demo_ws my_strategy
 ```
 
-This strategy:
-- computes short/long SMA on NIFTY50 index close prices
-- goes long when short SMA crosses above long SMA
-- goes short when short SMA crosses below long SMA
+### 3) Implement/update strategy code
+Edit project strategy crate files (for example):
+- `demo_ws/projects/my_strategy/strategy/src/my_strategy.rs`
 
-### Random strategy
+Optional sanity checks:
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
-  --strategy random \
-  --params prob=0.5 \
-  --params qty=1 \
-  --params seed=42
+cargo check --bin bt
+cd demo_ws/projects/my_strategy/strategy && cargo check
 ```
 
-## Run with JSON config
-Use `--config-file` for full configuration, including portfolio composition.
+### 4) Configure run defaults
+Edit:
+- `demo_ws/projects/my_strategy/bt.toml`
 
-### Where to set start/end range
-- CLI flags: `--start-date YYYY-MM-DD` and `--end-date YYYY-MM-DD`
-- JSON config fields: `start_date` and `end_date`
+Set at least:
+- `[run].default_strategy`
+- `[run].data`
+- `[run].start_date`
+- `[run].end_date`
 
-Example (CLI):
+### 5) Start cache server (terminal A)
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
+bt cache server --bind 127.0.0.1:7878
+```
+
+### 6) Warm cache (terminal B)
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm \
+  --project my_strategy \
+  --workspace ./demo_ws
+```
+
+Optional cache inspection:
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache status
+```
+
+### 7) Run backtest
+Using config defaults from `bt.toml`:
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
+  --project my_strategy \
+  --workspace ./demo_ws \
+  --strategy my_strategy
+```
+
+Or override data/date directly:
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
+  --project my_strategy \
+  --workspace ./demo_ws \
+  --strategy my_strategy \
+  --data /quant/nifty_with_options.parquet \
   --start-date 2024-01-01 \
-  --end-date 2024-03-31 \
-  --strategy random \
-  --params prob=0.5 \
-  --params qty=1
+  --end-date 2024-01-05
 ```
 
-Example `run_config.json`:
-```json
-{
-  "data_dir": "./sample_data/niftyIndex2024.sample.parquet",
-  "start_date": "2024-01-01",
-  "end_date": "2024-03-31",
-  "initial_capital": 1000000,
-  "portfolio": {
-    "strategies": [
-      {
-        "id": "s1",
-        "kind": "nifty_nearest_expiry_straddle",
-        "params": {
-          "index_symbol": "NIFTY 50",
-          "qty": "1"
-        },
-        "capital_limit": 300000,
-        "max_exposure_ratio": 0.6
-      },
-      {
-        "id": "s2",
-        "kind": "random",
-        "params": {
-          "prob": "0.25",
-          "qty": "1",
-          "seed": "7"
-        },
-        "capital_limit": 200000,
-        "max_exposure_ratio": 0.5
-      },
-      {
-        "id": "s3",
-        "kind": "sma_nifty50",
-        "params": {
-          "index_symbol": "NIFTY 50",
-          "qty": "1",
-          "short_period": "20",
-          "long_period": "50"
-        },
-        "capital_limit": 250000,
-        "max_exposure_ratio": 0.5
-      }
-    ]
-  }
-}
-```
-
-Run:
+### 8) See results
+Latest run folder:
 ```bash
-cargo run --release -- run --config-file ./run_config.json
+latest=$(ls -td demo_ws/projects/my_strategy/backtests/my_strategy_* | head -1)
+echo "$latest"
 ```
 
-## Sweep
-Run parameter sweep from JSON file:
+Inspect logs and report:
 ```bash
-cargo run --release -- sweep --config ./test_sweep.json
+head -n 20 "$latest/engine.log"
+jq '.runtime_timing' "$latest/report.json"
+```
+
+### 9) (Optional) Evict and re-warm
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache evict --data /quant/nifty_with_options.parquet
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm --project my_strategy --workspace ./demo_ws
 ```
 
 ## Strategy lifecycle hooks

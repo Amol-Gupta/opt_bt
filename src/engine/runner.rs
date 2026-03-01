@@ -6,7 +6,7 @@ use chrono::Timelike;
 use crate::common::context::Context;
 use crate::common::event::{Event, EventQueue, FillEvent, MarketEvent, OrderEvent};
 use crate::common::logging::set_simulation_time;
-use crate::data::models::MarketData;
+use crate::data::view::MarketDataView;
 use crate::execution::fill::{DefaultFillModel, FillModel};
 use crate::strategy::Strategy;
 
@@ -15,7 +15,7 @@ pub struct Engine<S: Strategy> {
     pub strategy: S,
     pub event_queue: EventQueue,
     pub fill_model: Box<dyn FillModel>,
-    pub market_data: Arc<MarketData>,
+    pub market_data: Arc<dyn MarketDataView>,
     pub pending_orders: Vec<OrderEvent>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
@@ -36,7 +36,7 @@ struct EnginePhaseStats {
 }
 
 impl<S: Strategy> Engine<S> {
-    pub fn new(strategy: S, market_data: Arc<MarketData>, initial_capital: i64) -> Self {
+    pub fn new(strategy: S, market_data: Arc<dyn MarketDataView>, initial_capital: i64) -> Self {
         Self {
             context: Context::new(market_data.clone(), initial_capital),
             strategy,
@@ -186,7 +186,7 @@ impl<S: Strategy> Engine<S> {
 
         let started_fill_scan = Instant::now();
         for order in &self.pending_orders {
-            if let Some(fill_event) = self.fill_model.fill_order(order, &self.market_data) {
+            if let Some(fill_event) = self.fill_model.fill_order(order, self.market_data.as_ref()) {
                 fills.push(fill_event);
             } else {
                 remaining_orders.push(order.clone());
@@ -206,7 +206,7 @@ impl<S: Strategy> Engine<S> {
     fn handle_order_event(&mut self, event: &OrderEvent) {
         self.strategy.on_order_event(&mut self.context, event);
 
-        if let Some(fill) = self.fill_model.fill_order(event, &self.market_data) {
+        if let Some(fill) = self.fill_model.fill_order(event, self.market_data.as_ref()) {
             self.event_queue.push(Event::Fill(fill));
         } else {
             self.pending_orders.push(event.clone());
@@ -254,6 +254,7 @@ impl<S: Strategy> Engine<S> {
 
         self.market_data
             .market_timeline()
+            .into_iter()
             .filter(|timestamp| is_market_hour(*timestamp))
             .filter(|timestamp| {
                 let after_start = start_timestamp.map(|start| *timestamp >= start).unwrap_or(true);
@@ -268,7 +269,7 @@ impl<S: Strategy> Engine<S> {
             return index_id;
         }
 
-        self.market_data.bars.keys().copied().min().unwrap_or(0)
+        self.market_data.min_instrument_id().unwrap_or(0)
     }
 }
 
@@ -286,6 +287,7 @@ fn is_market_hour(timestamp: i64) -> bool {
 mod tests {
     use super::*;
     use crate::common::context::Context;
+    use crate::data::models::MarketData;
     use crate::strategy::Strategy;
 
     struct TestStrategy {

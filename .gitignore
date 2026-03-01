@@ -25,6 +25,7 @@ dist/
 *.egg-info/
 .rustc_info.json
 CACHEDIR.TAG
+/tmp/
 
 
 # Added by cargo

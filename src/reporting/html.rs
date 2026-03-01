@@ -159,7 +159,7 @@ mod tests {
                 config: HashMap::new(),
                 dataset: DatasetMetadata {
                     source: "x".to_string(),
-                    sha256: "y".to_string(),
+                  sha256: Some("y".to_string()),
                     granularity: "1m".to_string(),
                     start_date: "2024-01-01".to_string(),
                     end_date: "2024-01-02".to_string(),

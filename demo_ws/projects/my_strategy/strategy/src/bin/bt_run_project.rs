@@ -1,12 +1,19 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use opt_bt::cache::ipc as cache_ipc;
-use opt_bt::cache::snapshot::load_market_data_snapshot;
+use opt_bt::cache::snapshot::{
+    load_market_data_snapshot_view_with_backend,
+    validate_shared_snapshot_handle,
+};
+use opt_bt::config::Config;
+use opt_bt::data::view::MarketDataView;
 use my_strategy::create_strategy_by_id;
 use opt_bt::common::logging;
 use opt_bt::common::types::PRICE_SCALE;
 use opt_bt::engine::runner::Engine;
-use opt_bt::reporting::json::generate_report;
+use opt_bt::reporting::json::generate_report_with_reproducibility;
+use opt_bt::reporting::reproducibility::build_reproducibility;
 use opt_bt::strategy::portfolio::PortfolioStrategy;
 
 fn parse_params(values: &[String]) -> Result<BTreeMap<String, String>, String> {
@@ -29,24 +36,32 @@ fn load_market_data(
     data_path: &str,
     start_ts: i64,
     end_ts: i64,
-) -> std::sync::Arc<opt_bt::data::models::MarketData> {
+) -> Arc<dyn MarketDataView> {
     let addr = std::env::var("BT_CACHE_ADDR")
         .unwrap_or_else(|_| panic!("BT_CACHE_ADDR is required: backtest runs in cache-only mode"));
     let ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
         .unwrap_or_else(|err| panic!("Cache ENSURE failed for {data_path} via {addr}: {err}"));
     let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
-    let md = load_market_data_snapshot(snapshot_path).unwrap_or_else(|err| {
+    validate_shared_snapshot_handle(snapshot_path, &ensured.shared_handle).unwrap_or_else(|err| {
+        panic!(
+            "Shared snapshot handle validation failed for {}: {err}",
+            ensured.entry.snapshot_path
+        )
+    });
+    let loaded = load_market_data_snapshot_view_with_backend(snapshot_path).unwrap_or_else(|err| {
         panic!(
             "Failed to load cache snapshot {}: {err}",
             ensured.entry.snapshot_path
         )
     });
     log::info!(
-        "Loaded market data via cache snapshot: cache_hit={} snapshot={}",
+        "Loaded market data via cache snapshot: cache_hit={} snapshot={} configured_view_mode={} effective_view_backend={}",
         ensured.cache_hit,
-        ensured.entry.snapshot_path
+        ensured.entry.snapshot_path,
+        std::env::var("BT_CACHE_VIEW_MODE").unwrap_or_else(|_| "archived".to_string()),
+        loaded.backend
     );
-    md
+    loaded.market_data
 }
 
 fn main() {
@@ -110,6 +125,10 @@ fn main() {
     let data = data.unwrap_or_else(|| "./sample_data/niftyIndex2024.sample.parquet".to_string());
 
     let params = parse_params(&raw_params).unwrap_or_else(|err| panic!("Failed to parse params: {}", err));
+    let merged_params = params
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect::<std::collections::HashMap<String, String>>();
     let _logger_guard = logging::init_with_time_mode_and_file(
         &log_level,
         Some(&log_time_mode),
@@ -141,7 +160,26 @@ fn main() {
     engine.init();
     engine.run();
 
-    let report = generate_report(&engine);
+    let report_config = Config {
+        data_dir: Some(data.clone()),
+        config_file: None,
+        start_date: Some(resolved_start_date.to_string()),
+        end_date: Some(resolved_end_date.to_string()),
+        initial_capital,
+        log_level: log_level.clone(),
+        log_time_mode: log_time_mode.clone(),
+        log_file: log_file.clone(),
+        report_path: report_path.clone(),
+        params: None,
+        strategy: Some(strategy_id.clone()),
+        portfolio: None,
+        option_filter: None,
+        merged_params,
+    };
+
+    let reproducibility = build_reproducibility(&report_config, &data)
+        .unwrap_or_else(|err| panic!("Failed to build reproducibility metadata: {err}"));
+    let report = generate_report_with_reproducibility(&engine, Some(reproducibility));
     let json = serde_json::to_string_pretty(&report).expect("serialize report");
     if let Some(path) = report_path {
         std::fs::write(path, &json).expect("write report");

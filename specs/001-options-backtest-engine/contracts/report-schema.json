@@ -16,12 +16,12 @@
           "type": "object",
           "properties": {
             "source": { "type": "string", "description": "Data source identifier (e.g., nse-options-2023)" },
-            "sha256": { "type": "string", "description": "SHA256 checksum of the Parquet file(s)" },
+            "sha256": { "type": ["string", "null"], "description": "SHA256 checksum of the Parquet file(s); null when disabled" },
             "granularity": { "type": "string", "description": "Bar granularity (e.g., 1min)" },
             "start_date": { "type": "string", "format": "date" },
             "end_date": { "type": "string", "format": "date" }
           },
-          "required": ["sha256", "start_date", "end_date"]
+          "required": ["start_date", "end_date"]
         }
       },
       "required": ["engine_version", "parameters", "dataset"]

@@ -42,8 +42,9 @@ impl NiftyNearestExpiryStraddleStrategy {
 
     fn nearest_expiry_for_day(&self, ctx: &Context, today_yyyymmdd: i32) -> Option<i32> {
         ctx.market_data
-            .instrument_meta
-            .values()
+            .iter_ids()
+            .into_iter()
+            .filter_map(|(instrument_id, _)| ctx.market_data.get_instrument(instrument_id))
             .filter_map(|instrument| {
                 if instrument.kind != InstrumentKind::Option {
                     return None;
@@ -63,8 +64,9 @@ impl NiftyNearestExpiryStraddleStrategy {
     fn build_nearest_expiry_chain(&self, ctx: &Context, expiry_yyyymmdd: i32) -> Vec<u32> {
         let mut ids: Vec<u32> = ctx
             .market_data
-            .instrument_meta
-            .values()
+            .iter_ids()
+            .into_iter()
+            .filter_map(|(instrument_id, _)| ctx.market_data.get_instrument(instrument_id))
             .filter_map(|instrument| {
                 if instrument.kind != InstrumentKind::Option {
                     return None;

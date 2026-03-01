@@ -10,7 +10,11 @@ use crate::config::Config;
 use crate::reporting::json::{DatasetMetadata, Reproducibility};
 
 pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reproducibility> {
-    let dataset_sha = compute_file_sha256(data_path)?;
+    let dataset_sha = if include_dataset_sha(config) {
+        Some(compute_file_sha256(data_path)?)
+    } else {
+        None
+    };
 
     let mut config_map = HashMap::new();
     config_map.insert(
@@ -56,7 +60,7 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
         dataset: DatasetMetadata {
             source: data_path.to_string(),
             sha256: dataset_sha,
-            granularity: "unknown".to_string(),
+            granularity: "1m".to_string(),
             start_date: config
                 .start_date
                 .clone()
@@ -67,6 +71,34 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
                 .unwrap_or_else(|| "unknown".to_string()),
         },
     })
+}
+
+fn include_dataset_sha(config: &Config) -> bool {
+    if let Ok(value) = std::env::var("OPT_BT_REPORT_SHA256") {
+        if parse_bool_flag(&value) {
+            return true;
+        }
+        if !value.trim().is_empty() {
+            return false;
+        }
+    }
+
+    if let Some(value) = config.merged_params.get("dataset_sha256") {
+        return parse_bool_flag(value);
+    }
+
+    if let Some(value) = config.merged_params.get("include_dataset_sha") {
+        return parse_bool_flag(value);
+    }
+
+    false
+}
+
+fn parse_bool_flag(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "y" | "on"
+    )
 }
 
 fn compute_file_sha256(path: &str) -> Result<String> {

@@ -1,6 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 use opt_bt::cache::ipc as cache_ipc;
-use opt_bt::cache::snapshot::load_market_data_snapshot;
+use opt_bt::cache::snapshot::{
+    load_market_data_snapshot,
+    load_market_data_snapshot_view_with_backend,
+    validate_shared_snapshot_handle,
+};
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
 use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
@@ -11,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -76,6 +80,8 @@ enum CacheCommands {
     Status(CacheStatusArgs),
     #[command(about = "Evict all cache entries for a dataset path")]
     Evict(CacheEvictArgs),
+    #[command(about = "Benchmark loading data from cache snapshot without running strategy")]
+    LoadBench(CacheLoadBenchArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -207,6 +213,22 @@ struct CacheEvictArgs {
     data: String,
     #[arg(long, default_value_t = false, help = "Emit JSON output")]
     json: bool,
+}
+
+#[derive(Args, Debug)]
+struct CacheLoadBenchArgs {
+    #[arg(long, help = "Input parquet data path")]
+    data: Option<String>,
+    #[arg(long, help = "Simulation start date (YYYY-MM-DD)")]
+    start_date: Option<String>,
+    #[arg(long, help = "Simulation end date (YYYY-MM-DD)")]
+    end_date: Option<String>,
+    #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
+    project: Option<String>,
+    #[arg(long, help = "Workspace root path")]
+    workspace: Option<PathBuf>,
+    #[arg(long, default_value_t = 5, help = "Number of snapshot-load iterations")]
+    repeats: u32,
 }
 
 #[derive(Args, Debug)]
@@ -347,6 +369,7 @@ impl_display_via_debug!(
     CacheWarmArgs,
     CacheStatusArgs,
     CacheEvictArgs,
+    CacheLoadBenchArgs,
     DataIndexArgs,
     DataContractArgs,
     DataSliceArgs,
@@ -385,6 +408,7 @@ fn run() -> Result<(), DynError> {
             CacheCommands::Warm(args) => run_cache_warm_cmd(args),
             CacheCommands::Status(args) => run_cache_status_cmd(args),
             CacheCommands::Evict(args) => run_cache_evict_cmd(args),
+            CacheCommands::LoadBench(args) => run_cache_load_bench_cmd(args),
         },
         Commands::Data { command } => match command {
             DataCommands::Index(args) => run_data_index_cmd(args),
@@ -486,6 +510,99 @@ fn run_cache_evict_cmd(args: CacheEvictArgs) -> Result<(), DynError> {
     println!("cache_addr={}", addr);
     println!("data={}", args.data);
     println!("removed={}", result.removed);
+    Ok(())
+}
+
+fn run_cache_load_bench_cmd(args: CacheLoadBenchArgs) -> Result<(), DynError> {
+    let repeats = args.repeats.max(1);
+
+    let mut run_cfg = RunSection::default();
+    if let Some(project) = args.project.as_deref() {
+        let root = discover_workspace_root(args.workspace.clone())?;
+        let manifest = load_workspace_manifest(&root)?;
+        let project_root = resolve_project_root(&root, &manifest, project)?;
+        let project_file = load_project_file(&project_root)?;
+        run_cfg = project_file.run.unwrap_or_default();
+    }
+
+    let env_data = std::env::var("BT_DATA").ok();
+    let env_start_date = std::env::var("BT_START_DATE").ok();
+    let env_end_date = std::env::var("BT_END_DATE").ok();
+
+    let data = args
+        .data
+        .or(env_data)
+        .or(run_cfg.data)
+        .ok_or_else(|| {
+            "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
+                .to_string()
+        })?;
+
+    if !Path::new(&data).exists() {
+        return Err(format!("configured data path does not exist: {data}").into());
+    }
+
+    let start_date = args.start_date.or(env_start_date).or(run_cfg.start_date);
+    let end_date = args.end_date.or(env_end_date).or(run_cfg.end_date);
+    let range = match (start_date.as_deref(), end_date.as_deref()) {
+        (Some(start), Some(end)) => Some(opt_bt::config::parse_date_range_to_epoch(start, end)?),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "partial date range provided; pass both --start-date and --end-date (or set both in env/config)"
+                    .into(),
+            )
+        }
+    };
+
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let ensure_started = Instant::now();
+    let ensured = cache_ipc::ensure_loaded(&addr, &data, range)?;
+    let ensure_ms = ensure_started.elapsed().as_millis();
+    let snapshot_path = Path::new(&ensured.entry.snapshot_path);
+
+    let mut load_micros: Vec<u128> = Vec::with_capacity(repeats as usize);
+    let mut effective_backend = "unknown";
+    for _ in 0..repeats {
+        let started = Instant::now();
+        let loaded = load_market_data_snapshot_view_with_backend(snapshot_path)?;
+        effective_backend = loaded.backend;
+        let market_data = loaded.market_data;
+        std::hint::black_box(market_data.market_timeline().into_iter().next());
+        load_micros.push(started.elapsed().as_micros());
+    }
+
+    let min_us = *load_micros.iter().min().unwrap_or(&0);
+    let max_us = *load_micros.iter().max().unwrap_or(&0);
+    let total_us = load_micros.iter().sum::<u128>();
+    let avg_us = if load_micros.is_empty() {
+        0
+    } else {
+        total_us / load_micros.len() as u128
+    };
+    let warm_avg_us = if load_micros.len() > 1 {
+        load_micros.iter().skip(1).sum::<u128>() / (load_micros.len() as u128 - 1)
+    } else {
+        avg_us
+    };
+
+    println!("cache_addr={}", addr);
+    println!("data={}", data);
+    println!(
+        "view_mode={}",
+        std::env::var("BT_CACHE_VIEW_MODE").unwrap_or_else(|_| "archived".to_string())
+    );
+    println!("effective_view_backend={}", effective_backend);
+    println!("cache_hit={}", ensured.cache_hit);
+    println!("cache_lookup_ms={}", ensure_ms);
+    println!("cache_load_ms={}", ensured.load_ms);
+    println!("snapshot={}", ensured.entry.snapshot_path);
+    println!("repeats={}", repeats);
+    println!("load_min_ms={:.3}", min_us as f64 / 1000.0);
+    println!("load_avg_ms={:.3}", avg_us as f64 / 1000.0);
+    println!("load_warm_avg_ms={:.3}", warm_avg_us as f64 / 1000.0);
+    println!("load_max_ms={:.3}", max_us as f64 / 1000.0);
+
     Ok(())
 }
 
@@ -773,6 +890,7 @@ fn load_market_data_for_query(
     let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
     let ensured = cache_ipc::ensure_loaded(&addr, data_path, range)?;
     let snapshot_path = Path::new(&ensured.entry.snapshot_path);
+    validate_shared_snapshot_handle(snapshot_path, &ensured.shared_handle)?;
     Ok(load_market_data_snapshot(snapshot_path)?)
 }
 
@@ -2058,7 +2176,9 @@ fn build_and_resolve_binary(manifest_path: &Path, bin_name: &str, profile: &str)
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false);
 
-    if candidate.exists() && !force_build {
+    let needs_build = force_build || binary_needs_rebuild(manifest_path, &candidate)?;
+
+    if !needs_build {
         return Ok(candidate);
     }
 
@@ -2087,6 +2207,84 @@ fn build_and_resolve_binary(manifest_path: &Path, bin_name: &str, profile: &str)
         return Err(format!("compiled binary not found: {}", candidate.display()).into());
     }
     Ok(candidate)
+}
+
+fn binary_needs_rebuild(manifest_path: &Path, binary_path: &Path) -> Result<bool, DynError> {
+    if !binary_path.exists() {
+        return Ok(true);
+    }
+
+    let binary_modified = fs::metadata(binary_path)
+        .and_then(|meta| meta.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    let manifest_modified = fs::metadata(manifest_path)
+        .and_then(|meta| meta.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    if manifest_modified > binary_modified {
+        return Ok(true);
+    }
+
+    let manifest_dir = manifest_path
+        .parent()
+        .ok_or_else(|| format!("invalid manifest path: {}", manifest_path.display()))?;
+
+    let cargo_lock = manifest_dir.join("Cargo.lock");
+    if cargo_lock.exists() {
+        let lock_modified = fs::metadata(&cargo_lock)
+            .and_then(|meta| meta.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        if lock_modified > binary_modified {
+            return Ok(true);
+        }
+    }
+
+    let src_dir = manifest_dir.join("src");
+    if src_dir.exists() && newest_mtime_recursive(&src_dir)? > binary_modified {
+        return Ok(true);
+    }
+
+    let build_rs = manifest_dir.join("build.rs");
+    if build_rs.exists() {
+        let build_rs_modified = fs::metadata(&build_rs)
+            .and_then(|meta| meta.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        if build_rs_modified > binary_modified {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn newest_mtime_recursive(path: &Path) -> Result<SystemTime, DynError> {
+    let mut newest = SystemTime::UNIX_EPOCH;
+    let mut stack = vec![path.to_path_buf()];
+
+    while let Some(current) = stack.pop() {
+        for entry_result in fs::read_dir(&current)? {
+            let entry = entry_result?;
+            let file_type = entry.file_type()?;
+            let entry_path = entry.path();
+
+            if file_type.is_dir() {
+                stack.push(entry_path);
+                continue;
+            }
+
+            if file_type.is_file() {
+                let modified = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                if modified > newest {
+                    newest = modified;
+                }
+            }
+        }
+    }
+
+    Ok(newest)
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::collections::{BTreeSet, HashMap};
-use crate::data::models::{Bar, MarketData};
+use crate::data::models::Bar;
+use crate::data::view::MarketDataView;
 use crate::common::types::{InstrumentId, OrderType, Side};
 use crate::common::event::{Event, OrderEvent, FillEvent};
 use crate::portfolio::manager::Account;
@@ -19,7 +20,7 @@ pub struct SubscriptionDiff {
 pub struct Context {
     // Market Data access (historical or current snapshot)
     // Could track latest prices for all instruments
-    pub market_data: Arc<MarketData>,
+    pub market_data: Arc<dyn MarketDataView>,
     
     // Current simulation time
     pub current_timestamp: i64,
@@ -50,7 +51,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(market_data: Arc<MarketData>, initial_capital: i64) -> Self {
+    pub fn new(market_data: Arc<dyn MarketDataView>, initial_capital: i64) -> Self {
         Self {
             market_data,
             current_timestamp: 0,
@@ -134,13 +135,31 @@ impl Context {
         self.desired_subscriptions.iter().copied().collect()
     }
     
-    pub fn get_bar(&self, instrument_id: u32) -> Option<&Bar> {
+    pub fn get_bar(&self, instrument_id: u32) -> Option<Bar> {
         self.market_data
             .get_bar_at_or_before(instrument_id, self.current_timestamp)
     }
 
     /// Place a new order
     pub fn place_order(&mut self, instrument_id: u32, side: Side, order_type: OrderType, quantity: i64) -> u64 {
+        self.place_order_at(
+            instrument_id,
+            side,
+            order_type,
+            quantity,
+            self.current_timestamp,
+        )
+    }
+
+    /// Place a new order at an explicit timestamp.
+    pub fn place_order_at(
+        &mut self,
+        instrument_id: u32,
+        side: Side,
+        order_type: OrderType,
+        quantity: i64,
+        timestamp: i64,
+    ) -> u64 {
         if quantity <= 0 {
             self.warn(format!(
                 "rejected order: non-positive quantity={} strategy_id='{}' instrument_id={}",
@@ -192,7 +211,7 @@ impl Context {
         };
 
         let event = Event::Order(OrderEvent {
-            timestamp: self.current_timestamp,
+            timestamp,
             order_id,
             instrument_id,
             order_type,
@@ -283,6 +302,7 @@ mod tests {
     use crate::common::types::Status;
     use crate::portfolio::allocator::PortfolioAllocator;
     use crate::common::types::PRICE_SCALE;
+    use crate::data::models::MarketData;
 
     #[test]
     fn test_context_place_order() {

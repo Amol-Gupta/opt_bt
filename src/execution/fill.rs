@@ -1,9 +1,9 @@
 use crate::common::types::{OrderType, Side, Status};
 use crate::common::event::{OrderEvent, FillEvent};
-use crate::data::models::MarketData;
+use crate::data::view::MarketDataView;
 
 pub trait FillModel {
-    fn fill_order(&mut self, order: &OrderEvent, market_data: &MarketData) -> Option<FillEvent>;
+    fn fill_order(&mut self, order: &OrderEvent, market_data: &dyn MarketDataView) -> Option<FillEvent>;
 }
 
 /// A simple fill model:
@@ -56,7 +56,7 @@ impl DefaultFillModel {
 }
 
 impl FillModel for DefaultFillModel {
-    fn fill_order(&mut self, order: &OrderEvent, market_data: &MarketData) -> Option<FillEvent> {
+    fn fill_order(&mut self, order: &OrderEvent, market_data: &dyn MarketDataView) -> Option<FillEvent> {
         let target_bar = market_data.get_bar_at_or_before(order.instrument_id, order.timestamp)?;
         
         // Now check staleness on `target_bar`

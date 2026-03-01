@@ -11,14 +11,18 @@ fn ensure_loaded_reports_cold_then_warm_hit() {
     let mut store = CacheStore::new(false);
 
     let first = store
-        .ensure_loaded(fixture_path())
+        .ensure_loaded(fixture_path(), None, None)
         .expect("cold ensure should load");
     assert!(!first.cache_hit, "first ensure should be a miss");
+    assert_eq!(first.shared_handle.transport, "file_mmap");
+    assert_eq!(first.shared_handle.format, "rkyv_market_data_v1");
+    assert!(first.shared_handle.byte_len > 0);
 
     let second = store
-        .ensure_loaded(fixture_path())
+        .ensure_loaded(fixture_path(), None, None)
         .expect("warm ensure should hit");
     assert!(second.cache_hit, "second ensure should be a cache hit");
+    assert_eq!(first.shared_handle.generation, second.shared_handle.generation);
 }
 
 #[test]
@@ -28,7 +32,7 @@ fn ensure_loaded_invalidates_on_file_change() {
 
     let mut store = CacheStore::new(false);
     let cold = store
-        .ensure_loaded(temp.to_string_lossy().as_ref())
+        .ensure_loaded(temp.to_string_lossy().as_ref(), None, None)
         .expect("cold ensure should load");
     assert!(!cold.cache_hit);
 
@@ -36,12 +40,13 @@ fn ensure_loaded_invalidates_on_file_change() {
     std::fs::copy(fixture_path(), &temp).expect("rewrite fixture to bump mtime");
 
     let reloaded = store
-        .ensure_loaded(temp.to_string_lossy().as_ref())
+        .ensure_loaded(temp.to_string_lossy().as_ref(), None, None)
         .expect("ensure after file change should reload");
     assert!(
         !reloaded.cache_hit,
         "mtime change should produce a new fingerprint key"
     );
+    assert!(reloaded.shared_handle.generation > cold.shared_handle.generation);
 
     let _ = std::fs::remove_file(temp);
 }

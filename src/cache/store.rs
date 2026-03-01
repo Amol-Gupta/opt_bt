@@ -5,7 +5,7 @@ use std::time::Instant;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::cache::snapshot::write_market_data_snapshot;
+use crate::cache::snapshot::{build_shared_snapshot_handle, write_market_data_snapshot, SharedSnapshotHandle};
 use crate::data::fingerprint::{build_dataset_fingerprint, DatasetFingerprint};
 use crate::data::loader::DataLoader;
 use crate::data::models::MarketData;
@@ -26,6 +26,7 @@ pub struct EnsureLoadedResult {
     pub entry: CacheEntry,
     pub cache_hit: bool,
     pub load_ms: u128,
+    pub shared_handle: SharedSnapshotHandle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +38,7 @@ pub struct CacheStatus {
 #[derive(Debug)]
 struct CachedDataset {
     entry: CacheEntry,
+    shared_handle: SharedSnapshotHandle,
     #[allow(dead_code)]
     market_data: Arc<MarketData>,
 }
@@ -44,6 +46,7 @@ struct CachedDataset {
 #[derive(Debug, Default)]
 pub struct CacheStore {
     include_sha256: bool,
+    next_generation: u64,
     entries: HashMap<String, CachedDataset>,
 }
 
@@ -51,6 +54,7 @@ impl CacheStore {
     pub fn new(include_sha256: bool) -> Self {
         Self {
             include_sha256,
+            next_generation: 1,
             entries: HashMap::new(),
         }
     }
@@ -73,6 +77,7 @@ impl CacheStore {
                 entry: existing.entry.clone(),
                 cache_hit: true,
                 load_ms: 0,
+                shared_handle: existing.shared_handle.clone(),
             });
         }
 
@@ -90,6 +95,11 @@ impl CacheStore {
             .map(|bars| bars.len())
             .sum::<usize>();
 
+        let snapshot_path = write_market_data_snapshot(&key, market_data.as_ref())?;
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.saturating_add(1);
+        let shared_handle = build_shared_snapshot_handle(&snapshot_path, generation)?;
+
         let entry = CacheEntry {
             fingerprint,
             start_ts,
@@ -100,15 +110,14 @@ impl CacheStore {
                 .as_secs(),
             instrument_count: market_data.instruments.len(),
             bar_count,
-            snapshot_path: write_market_data_snapshot(&key, market_data.as_ref())?
-                .to_string_lossy()
-                .to_string(),
+            snapshot_path: snapshot_path.to_string_lossy().to_string(),
         };
 
         self.entries.insert(
             key,
             CachedDataset {
                 entry: entry.clone(),
+                shared_handle: shared_handle.clone(),
                 market_data,
             },
         );
@@ -117,6 +126,7 @@ impl CacheStore {
             entry,
             cache_hit: false,
             load_ms,
+            shared_handle,
         })
     }
 

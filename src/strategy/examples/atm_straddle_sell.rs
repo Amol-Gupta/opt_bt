@@ -49,12 +49,12 @@ impl AtmStraddleSellStrategy {
         let mut best_ce: Option<(u32, i64)> = None;
         let mut best_pe: Option<(u32, i64)> = None;
 
-        for (instrument_id, symbol) in &ctx.market_data.ids {
-            if ctx.get_bar(*instrument_id).is_none() {
+        for (instrument_id, symbol) in ctx.market_data.iter_ids() {
+            if ctx.get_bar(instrument_id).is_none() {
                 continue;
             }
 
-            let strike = match Self::parse_strike(symbol) {
+            let strike = match Self::parse_strike(&symbol) {
                 Some(value) => value,
                 None => continue,
             };
@@ -63,11 +63,11 @@ impl AtmStraddleSellStrategy {
 
             if symbol.ends_with("CE") {
                 if best_ce.map(|(_, d)| distance < d).unwrap_or(true) {
-                    best_ce = Some((*instrument_id, distance));
+                    best_ce = Some((instrument_id, distance));
                 }
             } else if symbol.ends_with("PE") {
                 if best_pe.map(|(_, d)| distance < d).unwrap_or(true) {
-                    best_pe = Some((*instrument_id, distance));
+                    best_pe = Some((instrument_id, distance));
                 }
             }
         }

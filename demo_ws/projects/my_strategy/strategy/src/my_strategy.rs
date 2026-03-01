@@ -51,7 +51,7 @@ impl Strategy for MyStrategy {
             let symbol = ctx
                 .market_data
                 .get_symbol(event.instrument_id)
-                .unwrap_or("UNKNOWN");
+                .unwrap_or_else(|| "UNKNOWN".to_string());
             // log::info!(
             //     "[BAR] ts={} symbol={} open={:.4} high={:.4} low={:.4} close={:.4} volume={}",
             //     bar.timestamp,
@@ -145,8 +145,9 @@ impl AlgotestWeeklyStraddleStrategy {
 
     fn nearest_weekly_expiry(&self, ctx: &Context, today_yyyymmdd: i32) -> Option<i32> {
         ctx.market_data
-            .instrument_meta
-            .values()
+            .iter_ids()
+            .into_iter()
+            .filter_map(|(instrument_id, _)| ctx.market_data.get_instrument(instrument_id))
             .filter_map(|instrument| {
                 let option = instrument.option.as_ref()?;
                 if !option
@@ -183,14 +184,12 @@ impl AlgotestWeeklyStraddleStrategy {
         let mut call_candidates = 0usize;
         let mut put_candidates = 0usize;
 
-        log::info!(
-            "resolve_atm_pair: start expiry={} spot_points={} underlying={}",
-            expiry_yyyymmdd,
-            spot_points,
-            self.option_underlying
-        );
+        for (instrument_id, _) in ctx.market_data.iter_ids() {
+            let instrument = match ctx.market_data.get_instrument(instrument_id) {
+                Some(value) => value,
+                None => continue,
+            };
 
-        for instrument in ctx.market_data.instrument_meta.values() {
             let option = match &instrument.option {
                 Some(value) => value,
                 None => continue,
@@ -211,7 +210,6 @@ impl AlgotestWeeklyStraddleStrategy {
             }
 
             let strike_points = option.strike / PRICE_SCALE;
-            let symbol = ctx.market_data.get_symbol(instrument.id).unwrap_or("UNKNOWN");
             let slot = strike_pairs.entry(strike_points).or_default();
 
             match option.option_type {
@@ -219,22 +217,12 @@ impl AlgotestWeeklyStraddleStrategy {
                     call_candidates += 1;
                     if slot.ce_id.is_none() {
                         slot.ce_id = Some(instrument.id);
-                        log::info!(
-                            "resolve_atm_pair: CE candidate symbol={} strike={}",
-                            symbol,
-                            strike_points
-                        );
                     }
                 }
                 OptionType::Put => {
                     put_candidates += 1;
                     if slot.pe_id.is_none() {
                         slot.pe_id = Some(instrument.id);
-                        log::info!(
-                            "resolve_atm_pair: PE candidate symbol={} strike={}",
-                            symbol,
-                            strike_points
-                        );
                     }
                 }
             }
@@ -250,14 +238,6 @@ impl AlgotestWeeklyStraddleStrategy {
             .min()
             .unwrap_or(50);
         let target_strike = ((spot_points + strike_step / 2) / strike_step) * strike_step;
-
-        log::info!(
-            "resolve_atm_pair: strike_grid count={} min_gap={} target_strike={} spot_points={}",
-            strikes.len(),
-            strike_step,
-            target_strike,
-            spot_points
-        );
 
         let selected = if let Some(pair) = strike_pairs.get(&target_strike) {
             if let (Some(ce_id), Some(pe_id)) = (pair.ce_id, pair.pe_id) {
@@ -290,36 +270,17 @@ impl AlgotestWeeklyStraddleStrategy {
         });
 
         match selected {
-            Some((selected_strike, ce_id, pe_id)) => {
-                let ce_symbol = ctx.market_data.get_symbol(ce_id).unwrap_or("UNKNOWN");
-                let pe_symbol = ctx.market_data.get_symbol(pe_id).unwrap_or("UNKNOWN");
+            Some((_selected_strike, ce_id, pe_id)) => {
                 let ce_strike = ctx
                     .market_data
                     .get_instrument(ce_id)
-                    .and_then(|ins| ins.option.as_ref())
-                    .map(|o| o.strike / PRICE_SCALE)
+                    .and_then(|ins| ins.option.map(|option| option.strike / PRICE_SCALE))
                     .unwrap_or_default();
                 let pe_strike = ctx
                     .market_data
                     .get_instrument(pe_id)
-                    .and_then(|ins| ins.option.as_ref())
-                    .map(|o| o.strike / PRICE_SCALE)
+                    .and_then(|ins| ins.option.map(|option| option.strike / PRICE_SCALE))
                     .unwrap_or_default();
-                let ce_dist = (ce_strike - spot_points).abs();
-                let pe_dist = (pe_strike - spot_points).abs();
-
-                log::info!(
-                    "resolve_atm_pair: selected target_strike={} ce={} strike={} dist={} | pe={} strike={} dist={} | candidates ce={} pe={}",
-                    selected_strike,
-                    ce_symbol,
-                    ce_strike,
-                    ce_dist,
-                    pe_symbol,
-                    pe_strike,
-                    pe_dist,
-                    call_candidates,
-                    put_candidates
-                );
 
                 if ce_strike != pe_strike {
                     log::warn!(

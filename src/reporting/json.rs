@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use crate::engine::runner::Engine;
 use crate::strategy::Strategy;
-use crate::common::types::PRICE_SCALE;
+use crate::common::types::{OrderType, PRICE_SCALE};
 use crate::data::view::MarketDataView;
 use crate::portfolio::manager::StrategyAttribution;
 use crate::reporting::metrics::calculate_metrics;
@@ -20,7 +20,9 @@ pub struct BacktestReport {
     pub post_analysis: PostAnalysisSummary,
     pub portfolio: PortfolioView,
     pub strategy_attribution: HashMap<String, StrategyAttributionRecord>,
-    pub trades: Vec<TradeRecord>,
+    pub fills: Vec<FillRecord>,
+    pub order_events: Vec<OrderEventRecord>,
+    pub position_events: Vec<PositionEventRecord>,
     pub warnings: Vec<String>,
     // pub equity_curve: Vec<EquityPoint>, // Commented out for now
 }
@@ -59,7 +61,8 @@ pub struct Metrics {
     pub sharpe_ratio: f64,
     pub sortino_ratio: f64,
     pub max_drawdown_pct: f64,
-    pub trade_count: u64,
+    pub fill_count: u64,
+    pub round_trip_trade_count: u64,
     pub win_rate_pct: f64,
     pub profit_factor: f64,
     pub margin_utilization_pct: f64,
@@ -67,18 +70,74 @@ pub struct Metrics {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct TradeRecord {
+pub struct FillRecord {
     pub id: u64,
+    pub order_id: u64,
     pub strategy_id: String,
-    pub symbol: String, // Need lookup from instrument_id
-    pub side: String,   // "Buy" or "Sell" (usually Entry side)
-    pub entry_time: String,
-    pub exit_time: String,
+    pub symbol: String,
+    pub side: String,
+    pub timestamp: String,
     pub qty: i64,
-    pub entry_price: f64,
-    pub exit_price: f64,
-    pub pnl: f64,
+    pub price: f64,
+    pub fee: f64,
     pub stale_fill: bool,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct OrderEventRecord {
+    pub id: u64,
+    pub order_id: u64,
+    pub strategy_id: String,
+    pub instrument_id: u32,
+    pub symbol: String,
+    pub timestamp: String,
+    pub order_type: String,
+    pub side: String,
+    pub qty: i64,
+    pub limit_price: Option<f64>,
+    pub status: String,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct PositionEventRecord {
+    pub id: u64,
+    pub level: String,
+    pub timestamp: String,
+    pub strategy_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_qty: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_qty_before: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_qty_after: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_delta_qty: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_avg_cost_before: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_avg_cost_after: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub realized_pnl_delta: Option<f64>,
+    pub portfolio_open_instruments_before: u64,
+    pub portfolio_open_instruments_after: u64,
+    pub portfolio_gross_qty_before: i64,
+    pub portfolio_gross_qty_after: i64,
+    pub portfolio_is_flat_before: bool,
+    pub portfolio_is_flat_after: bool,
+    pub change_type: String,
+    pub changed_fields: Vec<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -114,6 +173,7 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
     reproducibility: Option<Reproducibility>,
 ) -> BacktestReport {
     let raw_trades = &engine.context.account.trades;
+    let raw_orders = &engine.context.order_events;
     let trade_min_ts = raw_trades.iter().map(|t| t.timestamp).min();
     let trade_max_ts = raw_trades.iter().map(|t| t.timestamp).max();
     let simulation_start_ts = engine
@@ -130,17 +190,21 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         0
     };
 
-    // Trade reconstruction (FIFO)
-    let trades = reconstruct_trades(raw_trades, engine.market_data.as_ref());
+    let fills = build_fill_records(raw_trades, engine.market_data.as_ref());
+    let order_events = build_order_event_records(raw_orders, engine.market_data.as_ref());
+    let position_events = build_position_event_records(raw_trades, engine.market_data.as_ref());
     let strategy_attribution = reconstruct_strategy_attribution(&engine.context.account.strategy_attribution);
     let computed_metrics = calculate_metrics(&engine.context.account, &engine.context.account.trades);
+    let fill_count = raw_trades.len() as u64;
+    let round_trip_trade_count = computed_metrics.trade_count;
     let metrics = Metrics {
         total_return_pct: computed_metrics.total_return_pct,
         cagr_pct: computed_metrics.cagr_pct,
         sharpe_ratio: computed_metrics.sharpe_ratio,
         sortino_ratio: computed_metrics.sortino_ratio,
         max_drawdown_pct: computed_metrics.max_drawdown_pct,
-        trade_count: computed_metrics.trade_count,
+        fill_count,
+        round_trip_trade_count,
         win_rate_pct: computed_metrics.win_rate_pct,
         profit_factor: computed_metrics.profit_factor,
         margin_utilization_pct: computed_metrics.margin_utilization_pct,
@@ -177,66 +241,220 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         post_analysis,
         portfolio,
         strategy_attribution,
-        trades,
+        fills,
+        order_events,
+        position_events,
         warnings: engine.context.warnings.clone(),
     }
 }
 
-fn reconstruct_trades(raw_trades: &[crate::portfolio::models::Trade], market_data: &dyn MarketDataView) -> Vec<TradeRecord> {
-    let mut closed_trades = Vec::new();
+fn build_fill_records(raw_trades: &[crate::portfolio::models::Trade], market_data: &dyn MarketDataView) -> Vec<FillRecord> {
+    raw_trades
+        .iter()
+        .map(|trade| FillRecord {
+            id: trade.id,
+            order_id: trade.order_id,
+            strategy_id: trade.strategy_id.clone(),
+            symbol: market_data
+                .get_symbol(trade.instrument_id)
+                .unwrap_or_else(|| format!("ID:{}", trade.instrument_id)),
+            side: match trade.side {
+                crate::common::types::Side::Buy => "Buy".to_string(),
+                crate::common::types::Side::Sell => "Sell".to_string(),
+            },
+            timestamp: format_timestamp(trade.timestamp),
+            qty: trade.quantity,
+            price: (trade.price as f64) / (PRICE_SCALE as f64),
+            fee: (trade.fee as f64) / (PRICE_SCALE as f64),
+            stale_fill: false,
+        })
+        .collect()
+}
+
+fn build_order_event_records(
+    raw_orders: &[crate::common::event::OrderEvent],
+    market_data: &dyn MarketDataView,
+) -> Vec<OrderEventRecord> {
+    raw_orders
+        .iter()
+        .enumerate()
+        .map(|(idx, order)| {
+            let (order_type, limit_price) = match order.order_type {
+                OrderType::Market => ("Market".to_string(), None),
+                OrderType::Limit(price) => ("Limit".to_string(), Some((price as f64) / (PRICE_SCALE as f64))),
+                OrderType::Stop(price) => ("Stop".to_string(), Some((price as f64) / (PRICE_SCALE as f64))),
+            };
+
+            OrderEventRecord {
+                id: idx as u64 + 1,
+                order_id: order.order_id,
+                strategy_id: order.strategy_id.clone(),
+                instrument_id: order.instrument_id,
+                symbol: market_data
+                    .get_symbol(order.instrument_id)
+                    .unwrap_or_else(|| format!("ID:{}", order.instrument_id)),
+                timestamp: format_timestamp(order.timestamp),
+                order_type,
+                side: match order.side {
+                    crate::common::types::Side::Buy => "Buy".to_string(),
+                    crate::common::types::Side::Sell => "Sell".to_string(),
+                },
+                qty: order.quantity,
+                limit_price,
+                status: "Submitted".to_string(),
+            }
+        })
+        .collect()
+}
+
+fn build_position_event_records(
+    raw_trades: &[crate::portfolio::models::Trade],
+    market_data: &dyn MarketDataView,
+) -> Vec<PositionEventRecord> {
+    let mut events = Vec::new();
     let mut positions_by_instrument: HashMap<u32, crate::portfolio::models::Position> = HashMap::new();
-    let mut opened_at_by_instrument: HashMap<u32, i64> = HashMap::new();
-    let mut record_id: u64 = 1;
+    let mut event_id: u64 = 1;
 
     for trade in raw_trades {
+        let (open_before, gross_before, flat_before) = portfolio_position_stats(&positions_by_instrument);
+
         let pos = positions_by_instrument
             .entry(trade.instrument_id)
             .or_insert_with(|| crate::portfolio::models::Position::new(trade.instrument_id));
-        let previous_qty = pos.quantity;
-        let previous_avg_cost = pos.avg_cost;
-        let previous_realized = pos.realized_pnl;
-        let entry_ts = opened_at_by_instrument
-            .get(&trade.instrument_id)
-            .copied()
-            .unwrap_or(trade.timestamp);
+
+        let qty_before = pos.quantity;
+        let avg_cost_before = pos.avg_cost;
+        let realized_before = pos.realized_pnl;
 
         pos.update(trade);
-        let realized_delta = pos.realized_pnl - previous_realized;
 
-        if previous_qty == 0 && pos.quantity != 0 {
-            opened_at_by_instrument.insert(trade.instrument_id, trade.timestamp);
-        } else if pos.quantity == 0 {
-            opened_at_by_instrument.remove(&trade.instrument_id);
-        } else if previous_qty.signum() != 0 && pos.quantity.signum() != previous_qty.signum() {
-            opened_at_by_instrument.insert(trade.instrument_id, trade.timestamp);
+        let qty_after = pos.quantity;
+        let avg_cost_after = pos.avg_cost;
+        let realized_after = pos.realized_pnl;
+
+        let (open_after, gross_after, flat_after) = portfolio_position_stats(&positions_by_instrument);
+
+        let mut changed_fields = vec!["instrument_qty".to_string()];
+        if avg_cost_after != avg_cost_before {
+            changed_fields.push("instrument_avg_cost".to_string());
+        }
+        if realized_after != realized_before {
+            changed_fields.push("realized_pnl".to_string());
+        }
+        if open_after != open_before {
+            changed_fields.push("portfolio_open_instruments".to_string());
+        }
+        if gross_after != gross_before {
+            changed_fields.push("portfolio_gross_qty".to_string());
+        }
+        if flat_after != flat_before {
+            changed_fields.push("portfolio_is_flat".to_string());
         }
 
-        let symbol = market_data
-            .get_symbol(trade.instrument_id)
-            .unwrap_or_else(|| format!("ID:{}", trade.instrument_id));
+        let change_type = if qty_before == 0 && qty_after != 0 {
+            "open"
+        } else if qty_before != 0 && qty_after == 0 {
+            "close"
+        } else if qty_before.signum() != 0 && qty_after.signum() != qty_before.signum() {
+            "flip"
+        } else if qty_after.abs() > qty_before.abs() {
+            "increase"
+        } else {
+            "reduce"
+        };
 
-        if realized_delta != 0 && previous_qty != 0 {
-            let closing_qty = trade.quantity.min(previous_qty.abs());
-            let opening_side = if previous_qty > 0 { "Buy" } else { "Sell" };
+        events.push(PositionEventRecord {
+            id: event_id,
+            level: "instrument".to_string(),
+            timestamp: format_timestamp(trade.timestamp),
+            strategy_id: trade.strategy_id.clone(),
+            instrument_id: Some(trade.instrument_id),
+            symbol: Some(
+                market_data
+                    .get_symbol(trade.instrument_id)
+                    .unwrap_or_else(|| format!("ID:{}", trade.instrument_id)),
+            ),
+            order_id: Some(trade.order_id),
+            fill_id: Some(trade.id),
+            side: Some(match trade.side {
+                crate::common::types::Side::Buy => "Buy".to_string(),
+                crate::common::types::Side::Sell => "Sell".to_string(),
+            }),
+            fill_qty: Some(trade.quantity),
+            fill_price: Some((trade.price as f64) / (PRICE_SCALE as f64)),
+            instrument_qty_before: Some(qty_before),
+            instrument_qty_after: Some(qty_after),
+            instrument_delta_qty: Some(qty_after - qty_before),
+            instrument_avg_cost_before: Some((avg_cost_before as f64) / (PRICE_SCALE as f64)),
+            instrument_avg_cost_after: Some((avg_cost_after as f64) / (PRICE_SCALE as f64)),
+            realized_pnl_delta: Some(((realized_after - realized_before) as f64) / (PRICE_SCALE as f64)),
+            portfolio_open_instruments_before: open_before,
+            portfolio_open_instruments_after: open_after,
+            portfolio_gross_qty_before: gross_before,
+            portfolio_gross_qty_after: gross_after,
+            portfolio_is_flat_before: flat_before,
+            portfolio_is_flat_after: flat_after,
+            change_type: change_type.to_string(),
+            changed_fields,
+        });
+        event_id += 1;
 
-            closed_trades.push(TradeRecord {
-                id: record_id,
+        if flat_before != flat_after {
+            events.push(PositionEventRecord {
+                id: event_id,
+                level: "portfolio".to_string(),
+                timestamp: format_timestamp(trade.timestamp),
                 strategy_id: trade.strategy_id.clone(),
-                symbol,
-                side: opening_side.to_string(),
-                entry_time: format_timestamp(entry_ts),
-                exit_time: format_timestamp(trade.timestamp),
-                qty: closing_qty,
-                entry_price: (previous_avg_cost as f64) / (PRICE_SCALE as f64),
-                exit_price: (trade.price as f64) / (PRICE_SCALE as f64),
-                pnl: (realized_delta as f64) / (PRICE_SCALE as f64),
-                stale_fill: false,
+                instrument_id: None,
+                symbol: None,
+                order_id: Some(trade.order_id),
+                fill_id: Some(trade.id),
+                side: None,
+                fill_qty: None,
+                fill_price: None,
+                instrument_qty_before: None,
+                instrument_qty_after: None,
+                instrument_delta_qty: None,
+                instrument_avg_cost_before: None,
+                instrument_avg_cost_after: None,
+                realized_pnl_delta: None,
+                portfolio_open_instruments_before: open_before,
+                portfolio_open_instruments_after: open_after,
+                portfolio_gross_qty_before: gross_before,
+                portfolio_gross_qty_after: gross_after,
+                portfolio_is_flat_before: flat_before,
+                portfolio_is_flat_after: flat_after,
+                change_type: if flat_after {
+                    "flatten_book".to_string()
+                } else {
+                    "open_book".to_string()
+                },
+                changed_fields: vec![
+                    "portfolio_open_instruments".to_string(),
+                    "portfolio_gross_qty".to_string(),
+                    "portfolio_is_flat".to_string(),
+                ],
             });
-            record_id += 1;
+            event_id += 1;
         }
     }
 
-    closed_trades
+    events
+}
+
+fn portfolio_position_stats(
+    positions_by_instrument: &HashMap<u32, crate::portfolio::models::Position>,
+) -> (u64, i64, bool) {
+    let open_count = positions_by_instrument
+        .values()
+        .filter(|position| position.quantity != 0)
+        .count() as u64;
+    let gross_qty = positions_by_instrument
+        .values()
+        .map(|position| position.quantity.abs())
+        .sum::<i64>();
+    let is_flat = open_count == 0;
+    (open_count, gross_qty, is_flat)
 }
 
 fn reconstruct_strategy_attribution(

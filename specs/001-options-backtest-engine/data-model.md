@@ -113,7 +113,24 @@ struct Account {
 
 ## Reporting Schema (`report.json`)
 
-See `contracts/report-schema.json` for the authoritative JSON schema (includes `reproducibility`, `simulation`, `metrics`, `trades`, `equity_curve` sections).
+See `contracts/report-schema.json` for the authoritative JSON schema.
+
+Current top-level report sections are:
+- `reproducibility`
+- `simulation`
+- `metrics`
+- `post_analysis`
+- `portfolio`
+- `strategy_attribution`
+- `fills` (execution records)
+- `order_events` (intent records)
+- `position_events` (position state transition records)
+- `warnings`
+- `runtime_timing` (injected by CLI runtime)
+
+Metric terminology:
+- `fill_count`: canonical execution count
+- `round_trip_trade_count`: closed lifecycle count used for risk-style trade analytics
 
 ### Tax Model Interface
 ```rust
@@ -135,26 +152,69 @@ struct TaxAdjustedTrade {
 ### Example Report
 ```json
 {
-  "summary": {
-    "total_return_pct": 12.5,
-    "cagr": 0.04,
-    "sharpe": 1.2,
-    "drawdown_pct": -5.5,
-    "win_rate": 0.65
+    "metrics": {
+        "total_return_pct": 12.5,
+        "cagr_pct": 4.0,
+        "sharpe_ratio": 1.2,
+        "sortino_ratio": 1.8,
+        "max_drawdown_pct": -5.5,
+        "fill_count": 988,
+        "round_trip_trade_count": 492,
+        "win_rate_pct": 37.2,
+        "profit_factor": 1.34,
+        "margin_utilization_pct": 13.8,
+        "final_cash_balance": 410587.95
   },
-  "equity_curve": [
-    { "timestamp": 1234567890, "equity": 100000 },
-    { "timestamp": 1234567950, "equity": 100150 }
+    "fills": [
+        {
+            "id": 1,
+            "order_id": 42,
+            "strategy_id": "default",
+            "symbol": "NIFTY24MAR22000CE",
+            "side": "Buy",
+            "timestamp": "2024-01-02T09:15:00Z",
+            "qty": 50,
+            "price": 150.5,
+            "fee": 1.25,
+            "stale_fill": false
+        }
   ],
-  "trades": [
+    "order_events": [
     {
       "id": 1,
-      "symbol": "NIFTY23JAN18000CE",
+            "order_id": 42,
+            "strategy_id": "default",
+            "instrument_id": 1001,
+            "symbol": "NIFTY24MAR22000CE",
+            "timestamp": "2024-01-02T09:15:00Z",
+            "order_type": "Market",
       "side": "Buy",
       "qty": 50,
-      "price": 150.5,
-      "timestamp": "2023-01-01T09:15:00Z"
+            "limit_price": null,
+            "status": "Submitted"
+        }
+    ],
+    "position_events": [
+        {
+            "id": 1,
+            "level": "instrument",
+            "timestamp": "2024-01-02T09:15:00Z",
+            "strategy_id": "default",
+            "instrument_id": 1001,
+            "symbol": "NIFTY24MAR22000CE",
+            "order_id": 42,
+            "fill_id": 1,
+            "instrument_qty_before": 0,
+            "instrument_qty_after": 50,
+            "portfolio_open_instruments_before": 0,
+            "portfolio_open_instruments_after": 1,
+            "portfolio_gross_qty_before": 0,
+            "portfolio_gross_qty_after": 50,
+            "portfolio_is_flat_before": true,
+            "portfolio_is_flat_after": false,
+            "change_type": "open",
+            "changed_fields": ["instrument_qty", "portfolio_open_instruments", "portfolio_gross_qty", "portfolio_is_flat"]
     }
-  ]
+    ]
 }
 ```

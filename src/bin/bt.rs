@@ -1508,6 +1508,9 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     if let Err(err) = inject_runtime_timing(&report_path, &timing) {
         eprintln!("bt: warning: failed to inject runtime timing into report: {err}");
     }
+    if let Err(err) = write_report_event_artifacts(&report_path, &output_dir) {
+        eprintln!("bt: warning: failed to write event artifacts: {err}");
+    }
 
     eprintln!(
         "bt: timing cache_lookup_ms={} cache_load_ms={} cache_hit={} run_ms={}",
@@ -2346,6 +2349,30 @@ fn inject_runtime_timing(report_path: &Path, timing: &RuntimeTiming) -> Result<(
     );
 
     fs::write(report_path, serde_json::to_string_pretty(&value)?)?;
+    Ok(())
+}
+
+fn write_report_event_artifacts(report_path: &Path, output_dir: &Path) -> Result<(), DynError> {
+    if !report_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(report_path)?;
+    let value: serde_json::Value = serde_json::from_str(&content)?;
+    let Some(obj) = value.as_object() else {
+        return Ok(());
+    };
+
+    if let Some(order_events) = obj.get("order_events") {
+        let path = output_dir.join("order_events.json");
+        fs::write(path, serde_json::to_string_pretty(order_events)?)?;
+    }
+
+    if let Some(position_events) = obj.get("position_events") {
+        let path = output_dir.join("position_events.json");
+        fs::write(path, serde_json::to_string_pretty(position_events)?)?;
+    }
+
     Ok(())
 }
 

@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::reporting::json::{BacktestReport, TradeRecord};
+use crate::reporting::json::{BacktestReport, FillRecord};
 
 pub fn generate_html_report(report: &BacktestReport) -> String {
-    let mut trades_rows = String::new();
-    for trade in &report.trades {
-        trades_rows.push_str(&render_trade_row(trade));
+    let mut fills_rows = String::new();
+    for fill in &report.fills {
+      fills_rows.push_str(&render_fill_row(fill));
     }
 
     let mut strategy_rows = String::new();
@@ -59,7 +59,7 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
       <div class="card"><div class="label">Max Drawdown</div><div class="value">{:.2}%</div></div>
       <div class="card"><div class="label">Sharpe</div><div class="value">{:.2}</div></div>
       <div class="card"><div class="label">Sortino</div><div class="value">{:.2}</div></div>
-      <div class="card"><div class="label">Trade Count</div><div class="value">{}</div></div>
+      <div class="card"><div class="label">Fill Count</div><div class="value">{}</div></div>
     </div>
   </div>
 
@@ -79,10 +79,10 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
   </div>
 
   <div class="section">
-    <h2>Trades</h2>
+    <h2>Fills</h2>
     <table>
       <thead>
-        <tr><th>ID</th><th>Strategy</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>PnL</th></tr>
+        <tr><th>ID</th><th>Order</th><th>Strategy</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Fee</th><th>Time</th></tr>
       </thead>
       <tbody>{}</tbody>
     </table>
@@ -100,12 +100,12 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
         report.metrics.max_drawdown_pct,
         report.metrics.sharpe_ratio,
         report.metrics.sortino_ratio,
-        report.metrics.trade_count,
+        report.metrics.fill_count,
         report.portfolio.strategy_count,
         report.portfolio.total_realized_pnl,
         report.portfolio.total_fees_paid,
         strategy_rows,
-        trades_rows,
+        fills_rows,
         warning_items,
     )
 }
@@ -114,17 +114,18 @@ pub fn write_html_report<P: AsRef<Path>>(report: &BacktestReport, output_path: P
     fs::write(output_path, generate_html_report(report))
 }
 
-fn render_trade_row(trade: &TradeRecord) -> String {
+fn render_fill_row(fill: &FillRecord) -> String {
     format!(
-        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td></tr>",
-        trade.id,
-        html_escape(&trade.strategy_id),
-        html_escape(&trade.symbol),
-        html_escape(&trade.side),
-        trade.qty,
-        trade.entry_price,
-        trade.exit_price,
-        trade.pnl,
+    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.2}</td><td>{:.2}</td><td>{}</td></tr>",
+    fill.id,
+    fill.order_id,
+    html_escape(&fill.strategy_id),
+    html_escape(&fill.symbol),
+    html_escape(&fill.side),
+    fill.qty,
+    fill.price,
+    fill.fee,
+    html_escape(&fill.timestamp),
     )
 }
 
@@ -144,7 +145,7 @@ mod tests {
     use super::*;
     use crate::reporting::json::{
         BacktestReport, DatasetMetadata, Metrics, Reproducibility, Simulation, StrategyAttributionRecord,
-        TradeRecord,
+      FillRecord,
     };
     use crate::reporting::portfolio::PortfolioView;
     use crate::reporting::post_analysis::{PostAnalysisSummary, TaxSummary};
@@ -177,7 +178,8 @@ mod tests {
                 sharpe_ratio: 0.9,
                 sortino_ratio: 1.1,
                 max_drawdown_pct: -2.3,
-                trade_count: 1,
+                fill_count: 1,
+                round_trip_trade_count: 1,
                 win_rate_pct: 50.0,
                 profit_factor: 1.0,
                 margin_utilization_pct: 10.0,
@@ -202,19 +204,20 @@ mod tests {
                 strategy_breakdown: vec![],
             },
             strategy_attribution: HashMap::<String, StrategyAttributionRecord>::new(),
-            trades: vec![TradeRecord {
+            fills: vec![FillRecord {
                 id: 1,
+              order_id: 1,
                 strategy_id: "s1".to_string(),
                 symbol: "NIFTY".to_string(),
                 side: "Buy".to_string(),
-                entry_time: "t1".to_string(),
-                exit_time: "t2".to_string(),
+              timestamp: "t1".to_string(),
                 qty: 1,
-                entry_price: 100.0,
-                exit_price: 101.0,
-                pnl: 1.0,
+              price: 100.0,
+              fee: 0.0,
                 stale_fill: false,
             }],
+            order_events: vec![],
+            position_events: vec![],
             warnings: vec!["ok".to_string()],
         }
     }

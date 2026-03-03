@@ -43,7 +43,8 @@
         "sharpe_ratio": { "type": "number", "description": "Annualized Sharpe Ratio (risk-free rate: 5%)" },
         "sortino_ratio": { "type": "number", "description": "Annualized Sortino Ratio (risk-free rate: 5%)" },
         "max_drawdown_pct": { "type": "number" },
-        "trade_count": { "type": "integer" },
+        "fill_count": { "type": "integer" },
+        "round_trip_trade_count": { "type": "integer", "description": "Closed lifecycle count for risk analytics" },
         "win_rate_pct": { "type": "number" },
         "profit_factor": { "type": "number", "description": "Gross Profit / Gross Loss" },
         "margin_utilization_pct": { "type": "number" },
@@ -51,37 +52,120 @@
       },
       "required": ["total_return_pct", "max_drawdown_pct", "sharpe_ratio"]
     },
-    "trades": {
+
+    "fills": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
+          "order_id": { "type": "integer" },
+          "strategy_id": { "type": "string" },
           "symbol": { "type": "string" },
           "side": { "type": "string", "enum": ["Buy", "Sell"] },
-          "entry_time": { "type": "string", "format": "date-time" },
-          "exit_time": { "type": "string", "format": "date-time" },
+          "timestamp": { "type": "string", "format": "date-time" },
           "qty": { "type": "integer" },
-          "entry_price": { "type": "number" },
-          "exit_price": { "type": "number" },
-          "pnl": { "type": "number" },
-          "stale_fill": { "type": "boolean", "description": "True if this trade was filled against stale data (FR-009)" }
+          "price": { "type": "number" },
+          "fee": { "type": "number" },
+          "stale_fill": { "type": "boolean", "description": "True if this fill was executed against stale data" }
         },
-        "required": ["id", "symbol", "side", "qty", "pnl"]
+        "required": ["id", "order_id", "strategy_id", "symbol", "side", "timestamp", "qty", "price", "fee", "stale_fill"]
       }
     },
-    "equity_curve": {
+
+    "order_events": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "timestamp": { "type": "integer" },
-          "equity": { "type": "number" },
-          "drawdown_pct": { "type": "number" }
+          "id": { "type": "integer" },
+          "order_id": { "type": "integer" },
+          "strategy_id": { "type": "string" },
+          "instrument_id": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "order_type": { "type": "string", "enum": ["Market", "Limit", "Stop"] },
+          "side": { "type": "string", "enum": ["Buy", "Sell"] },
+          "qty": { "type": "integer" },
+          "limit_price": { "type": ["number", "null"] },
+          "status": { "type": "string" }
         },
-        "required": ["timestamp", "equity"]
+        "required": ["id", "order_id", "strategy_id", "instrument_id", "symbol", "timestamp", "order_type", "side", "qty", "status"]
+      }
+    },
+
+    "position_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "level": { "type": "string", "enum": ["instrument", "portfolio"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "strategy_id": { "type": "string" },
+          "instrument_id": { "type": ["integer", "null"] },
+          "symbol": { "type": ["string", "null"] },
+          "order_id": { "type": ["integer", "null"] },
+          "fill_id": { "type": ["integer", "null"] },
+          "side": { "type": ["string", "null"] },
+          "fill_qty": { "type": ["integer", "null"] },
+          "fill_price": { "type": ["number", "null"] },
+          "instrument_qty_before": { "type": ["integer", "null"] },
+          "instrument_qty_after": { "type": ["integer", "null"] },
+          "instrument_delta_qty": { "type": ["integer", "null"] },
+          "instrument_avg_cost_before": { "type": ["number", "null"] },
+          "instrument_avg_cost_after": { "type": ["number", "null"] },
+          "realized_pnl_delta": { "type": ["number", "null"] },
+          "portfolio_open_instruments_before": { "type": "integer" },
+          "portfolio_open_instruments_after": { "type": "integer" },
+          "portfolio_gross_qty_before": { "type": "integer" },
+          "portfolio_gross_qty_after": { "type": "integer" },
+          "portfolio_is_flat_before": { "type": "boolean" },
+          "portfolio_is_flat_after": { "type": "boolean" },
+          "change_type": { "type": "string" },
+          "changed_fields": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": [
+          "id",
+          "level",
+          "timestamp",
+          "strategy_id",
+          "portfolio_open_instruments_before",
+          "portfolio_open_instruments_after",
+          "portfolio_gross_qty_before",
+          "portfolio_gross_qty_after",
+          "portfolio_is_flat_before",
+          "portfolio_is_flat_after",
+          "change_type",
+          "changed_fields"
+        ]
+      }
+    },
+
+    "runtime_timing": {
+      "type": "object",
+      "properties": {
+        "cache_server_reachable": { "type": "boolean" },
+        "cache_hit": { "type": "boolean" },
+        "cache_lookup_ms": { "type": "number" },
+        "cache_load_ms": { "type": "number" },
+        "backtest_run_ms": { "type": "number" }
       }
     }
   },
-  "required": ["reproducibility", "simulation", "metrics", "trades", "equity_curve"]
+  "required": [
+    "reproducibility",
+    "simulation",
+    "metrics",
+    "fills",
+    "order_events",
+    "position_events",
+    "post_analysis",
+    "portfolio",
+    "strategy_attribution",
+    "warnings"
+  ]
 }

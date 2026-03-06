@@ -105,6 +105,7 @@ mod tests {
             log_time_mode: "simulation".to_string(),
             log_file: None,
             report_path: None,
+            benchmark: "NIFTY 50".to_string(),
             params: None,
             strategy: None,
             portfolio: None,

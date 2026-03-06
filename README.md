@@ -51,6 +51,7 @@ bt <command> --help
   - `--data <parquet_path>`
   - `--start-date YYYY-MM-DD`
   - `--end-date YYYY-MM-DD`
+  - `--benchmark <symbol>` (default: `NIFTY 50`)
   - `--params key=value` (repeatable)
   - `--log-time-mode simulation|wall`
 - Writes run artifacts into:
@@ -147,6 +148,7 @@ Set at least:
 - `[run].data`
 - `[run].start_date`
 - `[run].end_date`
+- `[run].benchmark` (optional; default `NIFTY 50`)
 
 ### 5) Start cache server (terminal A)
 ```bash
@@ -399,7 +401,17 @@ Yes, a single project can expose multiple strategies from its `strategy/` crate.
   - `--data` or `BT_DATA` or `[run].data`
   - `--start-date` or `BT_START_DATE` or `[run].start_date`
   - `--end-date` or `BT_END_DATE` or `[run].end_date`
+  - `--benchmark` or `BT_BENCHMARK` or `[run].benchmark` (defaults to `NIFTY 50`)
   - `--params key=value` (repeatable)
+
+### Benchmark behavior
+- Default benchmark is `NIFTY 50`.
+- Benchmark-relative metrics now use benchmark return series when available:
+  - `alpha`, `beta`, `tracking_error`, `information_ratio`, `treynor_ratio`
+- Report metadata includes:
+  - `metrics.benchmark_symbol`
+  - `metrics.benchmark_available`
+- Internal report computation reads `BT_BENCHMARK_SYMBOL` (set automatically by `bt run` / `opt_bt run`).
 
 ### Parameter sourcing details
 - Base params come from `[run.params]` in `bt.toml`
@@ -426,6 +438,7 @@ Example (`bt.toml`):
 ```toml
 [run]
 log_time_mode = "simulation"
+benchmark = "NIFTY 50"
 ```
 
 Example (override with CLI for a run):

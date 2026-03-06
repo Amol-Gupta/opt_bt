@@ -143,6 +143,8 @@ struct RunArgs {
     config: Option<PathBuf>,
     #[arg(long, help = "Logger timestamp mode (simulation|wall)")]
     log_time_mode: Option<String>,
+    #[arg(long, help = "Benchmark symbol for relative performance metrics", default_value = "NIFTY 50")]
+    benchmark: String,
     #[arg(long = "params", help = "Strategy/runtime parameter override as key=value (repeatable)")]
     params: Vec<String>,
 }
@@ -328,6 +330,7 @@ struct RunSection {
     start_date: Option<String>,
     end_date: Option<String>,
     log_time_mode: Option<String>,
+    benchmark: Option<String>,
     initial_capital: Option<i64>,
     params: Option<BTreeMap<String, String>>,
 }
@@ -1063,6 +1066,7 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
             start_date: None,
             end_date: None,
             log_time_mode: Some("simulation".to_string()),
+            benchmark: Some("NIFTY 50".to_string()),
             initial_capital: Some(1_000_000),
             params: Some(BTreeMap::from([
                 ("prob".to_string(), "0.5".to_string()),
@@ -1364,6 +1368,7 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     let env_data = std::env::var("BT_DATA").ok();
     let env_start_date = std::env::var("BT_START_DATE").ok();
     let env_end_date = std::env::var("BT_END_DATE").ok();
+    let env_benchmark = std::env::var("BT_BENCHMARK").ok();
     let env_params = std::env::var("BT_PARAMS").ok();
     let default_strategy = run_cfg.default_strategy.clone();
     let log_time_mode = args
@@ -1376,6 +1381,13 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
         .or(env_strategy)
         .or(default_strategy)
         .unwrap_or_else(|| "random".to_string());
+    let benchmark = if args.benchmark.trim().is_empty() {
+        env_benchmark
+            .or(run_cfg.benchmark.clone())
+            .unwrap_or_else(|| "NIFTY 50".to_string())
+    } else {
+        args.benchmark.clone()
+    };
 
     let output_dir = create_backtest_output_dir(&project_root, &strategy)?;
     let log_path = output_dir.join("engine.log");
@@ -1460,6 +1472,7 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
             .args(["--log-file", log_path.to_string_lossy().as_ref()])
             .args(["--report-path", report_path.to_string_lossy().as_ref()]);
         cmd.env("BT_CACHE_ADDR", &cache_timing.cache_addr);
+        cmd.env("BT_BENCHMARK_SYMBOL", &benchmark);
 
         if let Some(config) = args.config {
             cmd.args(["--config-file", config.to_string_lossy().as_ref()]);
@@ -1482,6 +1495,7 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
             &strategy,
             &data,
             run_cfg.initial_capital.unwrap_or(1_000_000),
+            &benchmark,
             Some(cache_timing.cache_addr.as_str()),
             &log_time_mode,
             &merged_params,
@@ -1740,6 +1754,7 @@ fn run_project_strategy(
     strategy_id: &str,
     data: &str,
     initial_capital: i64,
+    benchmark_symbol: &str,
     cache_addr: Option<&str>,
     log_time_mode: &str,
     params: &BTreeMap<String, String>,
@@ -1777,6 +1792,7 @@ fn run_project_strategy(
     if let Some(addr) = cache_addr {
         cmd.env("BT_CACHE_ADDR", addr);
     }
+    cmd.env("BT_BENCHMARK_SYMBOL", benchmark_symbol);
 
     if let Some(ref value) = start_date {
         cmd.args(["--start-date", value]);

@@ -64,6 +64,7 @@ Compiles/links and runs a project backtest by orchestrating generated runner + e
   - `--data <path>`
   - `--start-date <YYYY-MM-DD>`
   - `--end-date <YYYY-MM-DD>`
+  - `--benchmark <symbol>`
   - `--log-time-mode <simulation|wall>`
   - `--params key=value` (repeatable)
   - `--config <path>`
@@ -82,6 +83,7 @@ Compiles/links and runs a project backtest by orchestrating generated runner + e
   - `--data <path>` or `BT_DATA` or `[run].data`
   - `--start-date <YYYY-MM-DD>` or `BT_START_DATE` or `[run].start_date`
   - `--end-date <YYYY-MM-DD>` or `BT_END_DATE` or `[run].end_date`
+  - `--benchmark <symbol>` or `BT_BENCHMARK` or `[run].benchmark` (default `NIFTY 50`)
   - `--log-time-mode <simulation|wall>` or `[run].log_time_mode`
   - `--params key=value` (repeatable)
 
@@ -160,6 +162,7 @@ Minimal `bt.toml` fields:
 - `run.default_strategy`
 - `run.data`
 - `run.initial_capital`
+- `run.benchmark` (optional; default `NIFTY 50`)
 
 ## Non-Goals (Stage 1)
 - No compile-time strategy auto-discovery macros.

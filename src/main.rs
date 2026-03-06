@@ -91,7 +91,7 @@ fn main() {
             };
 
             log::info!(
-                "Backtest config: wall_start={} strategy={} start_date={} end_date={} data={} initial_capital={} log_level={} log_time_mode={}",
+                "Backtest config: wall_start={} strategy={} start_date={} end_date={} data={} initial_capital={} log_level={} log_time_mode={} benchmark={}",
                 Local::now().format("%Y-%m-%d %H:%M:%S"),
                 strategy_label,
                 config.start_date.clone().unwrap_or_else(|| "<none>".to_string()),
@@ -102,7 +102,8 @@ fn main() {
                     .unwrap_or_else(|| "<auto-resolve>".to_string()),
                 config.initial_capital,
                 config.log_level,
-                config.log_time_mode
+                config.log_time_mode,
+                config.benchmark
             );
             let data_path = resolve_data_path(config.data_dir.as_deref())
                 .unwrap_or_else(|err| panic!("Failed to resolve data path: {err}"));
@@ -116,6 +117,8 @@ fn main() {
             engine.init();
             engine.run();
 
+            std::env::set_var("BT_BENCHMARK_SYMBOL", &config.benchmark);
+
             let reproducibility = build_reproducibility(&config, data_path.to_string_lossy().as_ref())
                 .unwrap_or_else(|err| panic!("Failed to build reproducibility metadata: {err}"));
             let report = generate_report_with_reproducibility(&engine, Some(reproducibility));
@@ -128,6 +131,7 @@ fn main() {
         Commands::Sweep { config } => {
             eprintln!("Running parameter sweep from config: {}", config);
             let sweep_cfg = SweepConfig::from_file(&config).expect("Failed to load sweep config");
+            std::env::set_var("BT_BENCHMARK_SYMBOL", &sweep_cfg.base_config.benchmark);
             let _logger_guard = logging::init_with_time_mode_and_file(
                 &sweep_cfg.base_config.log_level,
                 Some(&sweep_cfg.base_config.log_time_mode),

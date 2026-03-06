@@ -12,6 +12,8 @@ use crate::reporting::post_analysis::{
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
 use chrono::{DateTime, Utc};
 
+pub const DEFAULT_BENCHMARK_SYMBOL: &str = "NIFTY 50";
+
 #[derive(Serialize, Debug, Clone)]
 pub struct BacktestReport {
     pub reproducibility: Reproducibility,
@@ -56,16 +58,40 @@ pub struct Simulation {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Metrics {
+    pub benchmark_symbol: String,
+    pub benchmark_available: bool,
+    pub total_orders: u64,
+    pub average_win_pct: f64,
+    pub average_loss_pct: f64,
+    pub compounding_annual_return_pct: f64,
+    pub expectancy: f64,
     pub total_return_pct: f64,
     pub cagr_pct: f64,
+    pub start_equity: f64,
+    pub end_equity: f64,
     pub sharpe_ratio: f64,
     pub sortino_ratio: f64,
+    pub probabilistic_sharpe_ratio_pct: f64,
     pub max_drawdown_pct: f64,
     pub fill_count: u64,
     pub round_trip_trade_count: u64,
     pub win_rate_pct: f64,
+    pub loss_rate_pct: f64,
+    pub profit_loss_ratio: f64,
     pub profit_factor: f64,
+    pub annual_standard_deviation: f64,
+    pub annual_variance: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub information_ratio: f64,
+    pub tracking_error: f64,
+    pub treynor_ratio: f64,
     pub margin_utilization_pct: f64,
+    pub estimated_strategy_capacity: Option<f64>,
+    pub lowest_capacity_asset: Option<String>,
+    pub total_fees: f64,
+    pub portfolio_turnover_pct: f64,
+    pub drawdown_recovery: u64,
     pub final_cash_balance: f64,
 }
 
@@ -194,20 +220,60 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
     let order_events = build_order_event_records(raw_orders, engine.market_data.as_ref());
     let position_events = build_position_event_records(raw_trades, engine.market_data.as_ref());
     let strategy_attribution = reconstruct_strategy_attribution(&engine.context.account.strategy_attribution);
-    let computed_metrics = calculate_metrics(&engine.context.account, &engine.context.account.trades);
+    let benchmark_symbol = std::env::var("BT_BENCHMARK_SYMBOL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_BENCHMARK_SYMBOL.to_string());
+    let benchmark_returns = build_benchmark_returns(
+        engine.market_data.as_ref(),
+        &benchmark_symbol,
+        simulation_start_ts,
+        simulation_end_ts,
+    );
+    let computed_metrics = calculate_metrics(
+        &engine.context.account,
+        &engine.context.account.trades,
+        &benchmark_returns,
+    );
+    let total_orders = raw_orders.len() as u64;
     let fill_count = raw_trades.len() as u64;
     let round_trip_trade_count = computed_metrics.trade_count;
     let metrics = Metrics {
+        benchmark_symbol,
+        benchmark_available: !benchmark_returns.is_empty(),
+        total_orders,
+        average_win_pct: computed_metrics.average_win_pct,
+        average_loss_pct: computed_metrics.average_loss_pct,
+        compounding_annual_return_pct: computed_metrics.compounding_annual_return_pct,
+        expectancy: computed_metrics.expectancy,
         total_return_pct: computed_metrics.total_return_pct,
         cagr_pct: computed_metrics.cagr_pct,
+        start_equity: computed_metrics.start_equity,
+        end_equity: computed_metrics.end_equity,
         sharpe_ratio: computed_metrics.sharpe_ratio,
         sortino_ratio: computed_metrics.sortino_ratio,
+        probabilistic_sharpe_ratio_pct: computed_metrics.probabilistic_sharpe_ratio_pct,
         max_drawdown_pct: computed_metrics.max_drawdown_pct,
         fill_count,
         round_trip_trade_count,
         win_rate_pct: computed_metrics.win_rate_pct,
+        loss_rate_pct: computed_metrics.loss_rate_pct,
+        profit_loss_ratio: computed_metrics.profit_loss_ratio,
         profit_factor: computed_metrics.profit_factor,
+        annual_standard_deviation: computed_metrics.annual_standard_deviation,
+        annual_variance: computed_metrics.annual_variance,
+        alpha: computed_metrics.alpha,
+        beta: computed_metrics.beta,
+        information_ratio: computed_metrics.information_ratio,
+        tracking_error: computed_metrics.tracking_error,
+        treynor_ratio: computed_metrics.treynor_ratio,
         margin_utilization_pct: computed_metrics.margin_utilization_pct,
+        estimated_strategy_capacity: None,
+        lowest_capacity_asset: None,
+        total_fees: computed_metrics.total_fees,
+        portfolio_turnover_pct: computed_metrics.portfolio_turnover_pct,
+        drawdown_recovery: computed_metrics.drawdown_recovery,
         final_cash_balance: computed_metrics.final_cash_balance,
     };
     let tax_model = FlatRateTaxModel::new("flat_rate_0pct", 0.0);
@@ -246,6 +312,55 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         position_events,
         warnings: engine.context.warnings.clone(),
     }
+}
+
+fn build_benchmark_returns(
+    market_data: &dyn MarketDataView,
+    benchmark_symbol: &str,
+    start_ts: i64,
+    end_ts: i64,
+) -> Vec<f64> {
+    let benchmark_id = resolve_benchmark_id(market_data, benchmark_symbol);
+    let Some(benchmark_id) = benchmark_id else {
+        return Vec::new();
+    };
+
+    let mut timestamps: Vec<i64> = market_data
+        .market_timeline()
+        .into_iter()
+        .filter(|ts| *ts >= start_ts && *ts <= end_ts)
+        .collect();
+    timestamps.sort_unstable();
+    timestamps.dedup();
+
+    let mut returns = Vec::new();
+    let mut prev_close: Option<i64> = None;
+    for ts in timestamps {
+        let Some(bar) = market_data.get_bar_at_or_before(benchmark_id, ts) else {
+            continue;
+        };
+        if let Some(prev) = prev_close {
+            if prev > 0 {
+                returns.push((bar.close as f64 / prev as f64) - 1.0);
+            }
+        }
+        prev_close = Some(bar.close);
+    }
+
+    returns
+}
+
+fn resolve_benchmark_id(market_data: &dyn MarketDataView, benchmark_symbol: &str) -> Option<u32> {
+    if let Some(id) = market_data.get_id(benchmark_symbol) {
+        return Some(id);
+    }
+
+    let target = benchmark_symbol.to_ascii_lowercase();
+    market_data
+        .iter_ids()
+        .into_iter()
+        .find(|(_, symbol)| symbol.to_ascii_lowercase() == target)
+        .map(|(id, _)| id)
 }
 
 fn build_fill_records(raw_trades: &[crate::portfolio::models::Trade], market_data: &dyn MarketDataView) -> Vec<FillRecord> {

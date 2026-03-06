@@ -69,6 +69,10 @@ pub struct Config {
     #[arg(long)]
     pub report_path: Option<String>,
 
+    /// Benchmark symbol used for relative performance metrics
+    #[arg(long, env = "OPT_BT_BENCHMARK", default_value = "NIFTY 50")]
+    pub benchmark: String,
+
     /// Strategy parameters (key=value)
     #[arg(long, value_parser = parse_key_val)]
     pub params: Option<Vec<(String, String)>>,
@@ -183,6 +187,7 @@ impl Config {
                 if cli_config.start_date.is_none() { cli_config.start_date = file_config.start_date; }
                 if cli_config.end_date.is_none() { cli_config.end_date = file_config.end_date; }
                 if cli_config.option_filter.is_none() { cli_config.option_filter = file_config.option_filter; }
+                if cli_config.benchmark == "NIFTY 50" { cli_config.benchmark = file_config.benchmark; }
                 // For params, we might want to merge map
             }
         }
@@ -241,6 +246,9 @@ impl Config {
                 }
                 if self.report_path.is_none() {
                     self.report_path = file_config.report_path;
+                }
+                if self.benchmark == "NIFTY 50" {
+                    self.benchmark = file_config.benchmark;
                 }
             }
         }
@@ -343,6 +351,7 @@ mod tests {
             log_time_mode: "simulation".to_string(),
             log_file: None,
             report_path: None,
+            benchmark: "NIFTY 50".to_string(),
             params: None,
             strategy: None,
             portfolio: None,
@@ -366,6 +375,7 @@ mod tests {
             log_time_mode: "simulation".to_string(),
             log_file: None,
             report_path: None,
+            benchmark: "NIFTY 50".to_string(),
             params: None,
             strategy: None,
             portfolio: None,
@@ -390,6 +400,7 @@ mod tests {
             log_time_mode: "simulation".to_string(),
             log_file: None,
             report_path: None,
+            benchmark: "NIFTY 50".to_string(),
             params: None,
             strategy: None,
             portfolio: None,

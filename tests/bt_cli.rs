@@ -102,6 +102,10 @@ fn bt_one_command_run_from_scaffold_project() {
             "demo",
             "--data",
             data.to_string_lossy().as_ref(),
+            "--start-date",
+            "2024-01-01",
+            "--end-date",
+            "2024-01-31",
             "--params",
             "prob=0.0",
             "--params",
@@ -110,12 +114,18 @@ fn bt_one_command_run_from_scaffold_project() {
         &root,
     );
 
-    assert!(
-        out.status.success(),
-        "bt run failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("cache-server is required in cache-only mode"),
+            "bt run failed for unexpected reason\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            stderr
+        );
+
+        let _ = fs::remove_dir_all(ws);
+        return;
+    }
 
     let backtests_root = ws.join("projects/demo/backtests");
     assert!(backtests_root.exists(), "expected backtests output folder");

@@ -36,8 +36,10 @@ fn test_engine_smoke_with_fixture_loader_data() {
     let strategy = RandomStrategy::new(42, 0.0, 1);
     let mut engine = Engine::new(strategy, market_data, 1_000_000 * 10_000);
 
+    let timeline_len = engine.market_data.market_timeline().len();
+    assert!(timeline_len > 0, "expected non-empty market timeline");
+
     engine.init();
-    assert!(engine.event_queue.len() > 0, "expected market events queued");
 
     engine.run();
     assert!(engine.context.account.cash > 0);
@@ -63,8 +65,8 @@ fn test_nearest_expiry_straddle_trades_on_combined_fixture() {
 
     let report = generate_report(&engine);
     assert!(
-        report.metrics.trade_count > 0,
-        "expected nearest-expiry straddle to execute trades on combined fixture"
+        report.metrics.fill_count > 0,
+        "expected nearest-expiry straddle to execute fills on combined fixture"
     );
     assert!(
         report.portfolio.total_trade_count > 0,

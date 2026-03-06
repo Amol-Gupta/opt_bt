@@ -74,7 +74,7 @@ fn test_multi_leg_straddle() {
     
     // Generate bars for CE
     let mut bars_ce = Vec::new();
-    let start_ts = 1672531200; 
+    let start_ts = 1672564500; // 09:15:00 UTC
     for i in 0..10 {
         bars_ce.push(Bar {
             timestamp: start_ts + i * 60,
@@ -132,10 +132,10 @@ fn test_multi_leg_straddle() {
     // 5. Verify
     let report = generate_report(&engine);
     
-    println!("Total Trades: {}", report.metrics.trade_count);
+    println!("Total Fills: {}", report.metrics.fill_count);
     
-    // We expect at least 2 trades (1 Buy CE, 1 Buy PE)
-    assert!(report.metrics.trade_count >= 2, "Expected at least 2 trades (straddle leg buys)");
+    // We expect at least 2 fills (1 Buy CE, 1 Buy PE)
+    assert!(report.metrics.fill_count >= 2, "Expected at least 2 fills (straddle leg buys)");
     
     // Verify we have positions in both
     // note: generate_report doesn't expose current positions easily in the struct yet (it's in report.trades mostly)

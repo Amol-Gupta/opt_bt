@@ -14,6 +14,16 @@ pub struct SubscriptionDiff {
     pub unchanged: Vec<InstrumentId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PositionPnlSnapshot {
+    pub instrument_id: u32,
+    pub quantity: i64,
+    pub avg_cost: i64,
+    pub realized_pnl: i64,
+    pub unrealized_pnl: i64,
+    pub mtm_pnl: i64,
+}
+
 /// Context provides the Strategy with access to market data and execution capabilities.
 /// It acts as a facade/gateway.
 #[derive(Debug)]
@@ -87,6 +97,110 @@ impl Context {
     
     pub fn now(&self) -> i64 {
         self.current_timestamp
+    }
+
+    pub fn position_qty(&self, instrument_id: u32) -> i64 {
+        self.account
+            .positions
+            .get(&instrument_id)
+            .map(|position| position.quantity)
+            .unwrap_or(0)
+    }
+
+    pub fn position_avg_cost(&self, instrument_id: u32) -> Option<i64> {
+        self.account
+            .positions
+            .get(&instrument_id)
+            .map(|position| position.avg_cost)
+    }
+
+    pub fn open_positions(&self) -> Vec<(u32, i64, i64)> {
+        let mut items: Vec<(u32, i64, i64)> = self
+            .account
+            .positions
+            .iter()
+            .filter_map(|(instrument_id, position)| {
+                if position.quantity == 0 {
+                    None
+                } else {
+                    Some((*instrument_id, position.quantity, position.avg_cost))
+                }
+            })
+            .collect();
+        items.sort_by_key(|(instrument_id, _, _)| *instrument_id);
+        items
+    }
+
+    pub fn instrument_realized_pnl(&self, instrument_id: u32) -> i64 {
+        self.account
+            .positions
+            .get(&instrument_id)
+            .map(|position| position.realized_pnl)
+            .unwrap_or(0)
+    }
+
+    pub fn realized_pnl(&self) -> i64 {
+        self.account.realized_pnl
+    }
+
+    pub fn instrument_unrealized_pnl(&self, instrument_id: u32) -> i64 {
+        let Some(position) = self.account.positions.get(&instrument_id) else {
+            return 0;
+        };
+        if position.quantity == 0 {
+            return 0;
+        }
+
+        let mark_price = self
+            .get_bar(instrument_id)
+            .map(|bar| bar.close)
+            .unwrap_or(position.avg_cost);
+
+        let pnl = (position.quantity as i128) * ((mark_price - position.avg_cost) as i128);
+        pnl.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    }
+
+    pub fn unrealized_pnl(&self) -> i64 {
+        let total = self
+            .account
+            .positions
+            .keys()
+            .map(|instrument_id| self.instrument_unrealized_pnl(*instrument_id) as i128)
+            .sum::<i128>();
+        total.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    }
+
+    pub fn mtm_pnl(&self) -> i64 {
+        let total = (self.realized_pnl() as i128) + (self.unrealized_pnl() as i128);
+        total.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    }
+
+    pub fn position_pnl_snapshot(&self, instrument_id: u32) -> Option<PositionPnlSnapshot> {
+        let position = self.account.positions.get(&instrument_id)?;
+        let realized_pnl = position.realized_pnl;
+        let unrealized_pnl = self.instrument_unrealized_pnl(instrument_id);
+        let mtm_pnl = (realized_pnl as i128 + unrealized_pnl as i128)
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+
+        Some(PositionPnlSnapshot {
+            instrument_id,
+            quantity: position.quantity,
+            avg_cost: position.avg_cost,
+            realized_pnl,
+            unrealized_pnl,
+            mtm_pnl,
+        })
+    }
+
+    pub fn position_wise_pnl(&self) -> Vec<PositionPnlSnapshot> {
+        let mut snapshots: Vec<PositionPnlSnapshot> = self
+            .account
+            .positions
+            .keys()
+            .filter_map(|instrument_id| self.position_pnl_snapshot(*instrument_id))
+            .collect();
+        snapshots.sort_by_key(|item| item.instrument_id);
+        snapshots
     }
 
     pub fn warn(&mut self, message: String) {
@@ -467,6 +581,96 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.contains("insufficient capital")));
+    }
+
+    #[test]
+    fn test_context_position_and_pnl_queries() {
+        let mut md = MarketData::new();
+        md.add_bar(
+            "NIFTY",
+            Bar {
+                timestamp: 100,
+                open: 100 * PRICE_SCALE,
+                high: 100 * PRICE_SCALE,
+                low: 100 * PRICE_SCALE,
+                close: 100 * PRICE_SCALE,
+                volume: 1,
+            },
+        );
+        md.add_bar(
+            "NIFTY",
+            Bar {
+                timestamp: 101,
+                open: 110 * PRICE_SCALE,
+                high: 110 * PRICE_SCALE,
+                low: 110 * PRICE_SCALE,
+                close: 110 * PRICE_SCALE,
+                volume: 1,
+            },
+        );
+        let instrument_id = md.get_id("NIFTY").expect("instrument missing");
+        let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
+
+        let buy_fill = FillEvent {
+            timestamp: 100,
+            order_id: 1,
+            instrument_id,
+            side: Side::Buy,
+            quantity: 2,
+            fill_price: 100 * PRICE_SCALE,
+            fee: 0,
+            status: Status::Filled,
+            strategy_id: "s1".to_string(),
+        };
+        ctx.on_fill_exposure(&buy_fill);
+        ctx.account.on_fill(&buy_fill);
+
+        assert_eq!(ctx.position_qty(instrument_id), 2);
+        assert_eq!(ctx.position_avg_cost(instrument_id), Some(100 * PRICE_SCALE));
+        assert_eq!(ctx.instrument_realized_pnl(instrument_id), 0);
+        assert_eq!(ctx.realized_pnl(), 0);
+
+        ctx.set_time(101);
+        // Unrealized = 2 * (110 - 100) * PRICE_SCALE
+        assert_eq!(ctx.instrument_unrealized_pnl(instrument_id), 20 * PRICE_SCALE);
+        assert_eq!(ctx.unrealized_pnl(), 20 * PRICE_SCALE);
+        assert_eq!(ctx.mtm_pnl(), 20 * PRICE_SCALE);
+
+        let sell_fill = FillEvent {
+            timestamp: 101,
+            order_id: 2,
+            instrument_id,
+            side: Side::Sell,
+            quantity: 1,
+            fill_price: 110 * PRICE_SCALE,
+            fee: 0,
+            status: Status::Filled,
+            strategy_id: "s1".to_string(),
+        };
+        ctx.on_fill_exposure(&sell_fill);
+        ctx.account.on_fill(&sell_fill);
+
+        // Realized = 1 * (110 - 100) * PRICE_SCALE
+        assert_eq!(ctx.realized_pnl(), 10 * PRICE_SCALE);
+        // Remaining unrealized = 1 * (110 - 100) * PRICE_SCALE
+        assert_eq!(ctx.unrealized_pnl(), 10 * PRICE_SCALE);
+        assert_eq!(ctx.mtm_pnl(), 20 * PRICE_SCALE);
+
+        let open = ctx.open_positions();
+        assert_eq!(open, vec![(instrument_id, 1, 100 * PRICE_SCALE)]);
+
+        let snapshot = ctx
+            .position_pnl_snapshot(instrument_id)
+            .expect("position snapshot should exist");
+        assert_eq!(snapshot.instrument_id, instrument_id);
+        assert_eq!(snapshot.quantity, 1);
+        assert_eq!(snapshot.avg_cost, 100 * PRICE_SCALE);
+        assert_eq!(snapshot.realized_pnl, 10 * PRICE_SCALE);
+        assert_eq!(snapshot.unrealized_pnl, 10 * PRICE_SCALE);
+        assert_eq!(snapshot.mtm_pnl, 20 * PRICE_SCALE);
+
+        let snapshots = ctx.position_wise_pnl();
+        assert_eq!(snapshots, vec![snapshot]);
     }
 }
 

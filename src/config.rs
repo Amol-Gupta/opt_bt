@@ -351,7 +351,7 @@ mod tests {
         };
 
         let err = config.resolve().expect_err("resolve should fail when start_date is missing");
-        assert!(err.to_string().contains("start-date"));
+        assert!(err.to_string().contains("start_date"));
     }
 
     #[test]

@@ -17,7 +17,7 @@ fn test_single_strategy_run() {
     // Price starts at 100, walks randomly
     let mut price = 100.0 * 10000.0;
     let mut bars = Vec::new();
-    let start_ts = 1672531200; // 2023-01-01
+    let start_ts = 1672564500; // 09:15:00 UTC
     
     for i in 0..100 {
         let open = price as i64;
@@ -58,11 +58,11 @@ fn test_single_strategy_run() {
     // 5. Generate Report & Verify
     let report = generate_report(&engine);
     
-    println!("Total Trades: {}", report.metrics.trade_count);
+    println!("Total Fills: {}", report.metrics.fill_count);
     println!("Final Balance: {}", report.metrics.final_cash_balance);
     
-    assert!(report.metrics.trade_count > 0, "Expected some trades to occur");
-    assert!(report.trades.len() > 0);
+    assert!(report.metrics.fill_count > 0, "Expected some fills to occur");
+    assert!(report.fills.len() > 0);
     
     // Check if we didn't crash and money changed
     assert_ne!(report.metrics.final_cash_balance, 1_000_000.0);
@@ -103,7 +103,7 @@ fn test_day_open_close_hooks_once_per_day() {
     let symbol = "NIFTY24APR22000CE";
 
     market_data.add_bar(symbol, Bar {
-        timestamp: 1_700_000_000,
+        timestamp: 1_672_564_500,
         open: 1_000_000,
         high: 1_001_000,
         low: 999_000,
@@ -111,7 +111,7 @@ fn test_day_open_close_hooks_once_per_day() {
         volume: 100,
     });
     market_data.add_bar(symbol, Bar {
-        timestamp: 1_700_000_000 + 86_400,
+        timestamp: 1_672_564_500 + 86_400,
         open: 1_000_000,
         high: 1_001_000,
         low: 999_000,

@@ -122,6 +122,31 @@ impl NiftyNearestExpiryStraddleStrategy {
             }
         }
     }
+
+    fn log_position_pnl(&mut self, ctx: &Context, stage: &str) {
+        let snapshots = ctx.position_wise_pnl();
+        if snapshots.is_empty() {
+            self.log_event(format!("{} position_pnl: none", stage));
+            return;
+        }
+
+        for snapshot in snapshots {
+            let symbol = ctx
+                .market_data
+                .get_symbol(snapshot.instrument_id)
+                .unwrap_or_else(|| format!("ID:{}", snapshot.instrument_id));
+            self.log_event(format!(
+                "{} position_pnl instrument_id={} symbol={} qty={} realized={} unrealized={} mtm={}",
+                stage,
+                snapshot.instrument_id,
+                symbol,
+                snapshot.quantity,
+                snapshot.realized_pnl,
+                snapshot.unrealized_pnl,
+                snapshot.mtm_pnl
+            ));
+        }
+    }
 }
 
 impl Strategy for NiftyNearestExpiryStraddleStrategy {
@@ -168,6 +193,7 @@ impl Strategy for NiftyNearestExpiryStraddleStrategy {
 
     fn after_close(&mut self, ctx: &mut Context) {
         self.log_event(format!("after_close ts={}", ctx.now()));
+        self.log_position_pnl(ctx, "after_close");
         ctx.clear_desired_subscriptions();
         let diff = ctx.apply_subscription_diff();
         self.log_event(format!(
@@ -256,3 +282,4 @@ impl Strategy for NiftyNearestExpiryStraddleStrategy {
         ));
     }
 }
+

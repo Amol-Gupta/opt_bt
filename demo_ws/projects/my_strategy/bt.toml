@@ -6,6 +6,7 @@ path = "/home/amol/opt_bt"
 bin = "opt_bt"
 
 [run]
+benchmark = "NIFTY 50"
 default_strategy = "algotest_weekly_straddle"
 data = "/quant/nifty_with_options_idx_minus_1min.parquet"
 start_date = "2024-01-01"

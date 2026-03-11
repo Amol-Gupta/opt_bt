@@ -74,6 +74,7 @@ fn main() {
     let mut log_time_mode = "simulation".to_string();
     let mut log_file: Option<String> = None;
     let mut report_path: Option<String> = None;
+    let benchmark = std::env::var("BT_BENCHMARK_SYMBOL").unwrap_or_else(|_| "NIFTY 50".to_string());
     let mut raw_params: Vec<String> = Vec::new();
 
     let mut args = std::env::args().skip(1);
@@ -174,6 +175,7 @@ fn main() {
         strategy: Some(strategy_id.clone()),
         portfolio: None,
         option_filter: None,
+        benchmark,
         merged_params,
     };
 

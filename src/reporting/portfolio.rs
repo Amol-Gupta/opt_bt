@@ -1,9 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::common::types::PRICE_SCALE;
 use crate::portfolio::manager::{Account, StrategyAttribution};
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PortfolioView {
     pub strategy_count: u64,
     pub total_trade_count: u64,
@@ -13,7 +13,7 @@ pub struct PortfolioView {
     pub strategy_breakdown: Vec<StrategyPortfolioBreakdown>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StrategyPortfolioBreakdown {
     pub strategy_id: String,
     pub trade_count: u64,

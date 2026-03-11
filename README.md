@@ -459,10 +459,12 @@ Recommended layout:
 projects/<project_name>/
 └── backtests/
     ├── <strategy>_<YYYY>_<mm>_<dd>_<HH>_<MM>_<SS>_<run_id>/
-    │   ├── report.json
+    │   ├── report.json       ← full JSON metrics + reproducibility
+    │   ├── report.html       ← human-readable HTML report (open in browser)
     │   └── engine.log
     └── <strategy>_<YYYY>_<mm>_<dd>_<HH>_<MM>_<SS>_<run_id>/
         ├── report.json
+        ├── report.html
         └── engine.log
 ```
 
@@ -521,6 +523,29 @@ Single `run` prints JSON report to stdout including:
 - reproducibility block (engine/config/dataset SHA metadata)
 
 For stage-1 `bt run`, artifacts are written automatically under `projects/<name>/backtests/<strategy>_<timestamp>_<run_id>/`.
+
+### HTML report
+`bt run` generates `report.html` alongside `report.json` in the backtest output folder. Open it in any browser to see a formatted summary of metrics, trades, and portfolio view:
+
+```bash
+# open the most recent backtest's HTML report
+latest=$(ls -td projects/my_strategy/backtests/my_strategy_* | head -1)
+xdg-open "$latest/report.html"        # Linux
+# open "$latest/report.html"           # macOS
+```
+
+Or from the workspace root:
+```bash
+bt run --project my_strategy --workspace ./demo_ws --strategy my_strategy \
+  --data ./sample_data/niftyIndex2024.sample.parquet
+# bt prints: bt: HTML report: <full path to report.html>
+```
+
+The HTML file is self-contained (no external dependencies) and includes:
+- **Summary metrics** table (Sharpe, win rate, max drawdown, etc.)
+- **Portfolio view** per-strategy equity and attribution
+- **Trades** table with fills and P&L
+- Benchmark fields (alpha, beta, tracking error) when benchmark data is present
 
 ## Notes
 - If `--data-dir` is omitted, engine falls back to `sample_data/niftyIndex2024.sample.parquet` when available.

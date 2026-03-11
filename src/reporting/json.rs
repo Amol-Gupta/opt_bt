@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::engine::runner::Engine;
 use crate::strategy::Strategy;
@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 
 pub const DEFAULT_BENCHMARK_SYMBOL: &str = "NIFTY 50";
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BacktestReport {
     pub reproducibility: Reproducibility,
     pub simulation: Simulation,
@@ -29,7 +29,7 @@ pub struct BacktestReport {
     // pub equity_curve: Vec<EquityPoint>, // Commented out for now
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Reproducibility {
     pub engine_version: String,
     pub strategy_version: String,
@@ -39,7 +39,7 @@ pub struct Reproducibility {
     pub dataset: DatasetMetadata,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DatasetMetadata {
     pub source: String,
     pub sha256: Option<String>,
@@ -48,7 +48,7 @@ pub struct DatasetMetadata {
     pub end_date: String,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Simulation {
     pub start_time: String,
     pub end_time: String,
@@ -56,7 +56,7 @@ pub struct Simulation {
     pub instrument_count: u32,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metrics {
     pub benchmark_symbol: String,
     pub benchmark_available: bool,
@@ -95,7 +95,7 @@ pub struct Metrics {
     pub final_cash_balance: f64,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FillRecord {
     pub id: u64,
     pub order_id: u64,
@@ -109,7 +109,7 @@ pub struct FillRecord {
     pub stale_fill: bool,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OrderEventRecord {
     pub id: u64,
     pub order_id: u64,
@@ -124,7 +124,7 @@ pub struct OrderEventRecord {
     pub status: String,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PositionEventRecord {
     pub id: u64,
     pub level: String,
@@ -166,7 +166,7 @@ pub struct PositionEventRecord {
     pub changed_fields: Vec<String>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StrategyAttributionRecord {
     pub trade_count: u64,
     pub realized_pnl: f64,
@@ -174,7 +174,7 @@ pub struct StrategyAttributionRecord {
     pub gross_notional: f64,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EquityPoint {
     pub timestamp: i64,
     pub equity: f64,

@@ -5,6 +5,8 @@ use opt_bt::cache::snapshot::{
     load_market_data_snapshot_view_with_backend,
     validate_shared_snapshot_handle,
 };
+use opt_bt::reporting::html::write_html_report;
+use opt_bt::reporting::json::BacktestReport;
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
 use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
@@ -1526,6 +1528,21 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
         eprintln!("bt: warning: failed to write event artifacts: {err}");
     }
 
+    let html_path = output_dir.join("report.html");
+    match fs::read_to_string(&report_path)
+        .map_err(|e| e.to_string())
+        .and_then(|s| serde_json::from_str::<BacktestReport>(&s).map_err(|e| e.to_string()))
+    {
+        Ok(report) => {
+            if let Err(err) = write_html_report(&report, &html_path) {
+                eprintln!("bt: warning: failed to write HTML report: {err}");
+            }
+        }
+        Err(err) => {
+            eprintln!("bt: warning: failed to generate HTML report: {err}");
+        }
+    }
+
     eprintln!(
         "bt: timing cache_lookup_ms={} cache_load_ms={} cache_hit={} run_ms={}",
         timing.cache_lookup_ms,
@@ -1536,6 +1553,10 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     eprintln!(
         "bt: artifacts written to {}",
         output_dir.to_string_lossy()
+    );
+    eprintln!(
+        "bt: HTML report: {}",
+        html_path.to_string_lossy()
     );
     Ok(())
 }

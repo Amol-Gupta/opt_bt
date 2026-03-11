@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::common::types::PRICE_SCALE;
 use crate::portfolio::manager::Account;
 use crate::portfolio::models::{Position, Trade};
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TaxAdjustedTrade {
     pub trade_id: u64,
     pub gross_pnl: f64,
@@ -14,7 +14,7 @@ pub struct TaxAdjustedTrade {
     pub net_pnl: f64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TaxSummary {
     pub model_name: String,
     pub total_gross_pnl: f64,
@@ -24,13 +24,13 @@ pub struct TaxSummary {
     pub trades: Vec<TaxAdjustedTrade>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StressScenario {
     pub name: String,
     pub price_shock_pct: f64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StressResult {
     pub scenario: String,
     pub price_shock_pct: f64,
@@ -38,7 +38,7 @@ pub struct StressResult {
     pub pnl_impact: f64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PostAnalysisSummary {
     pub tax: TaxSummary,
 }

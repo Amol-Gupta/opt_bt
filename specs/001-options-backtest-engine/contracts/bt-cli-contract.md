@@ -97,7 +97,7 @@ Compiles/links and runs a project backtest by orchestrating generated runner + e
 - Syncs generated registration/runner files
 - Invokes build (`cargo build` or `cargo run`) for the project runner target
 - Executes simulation binary
-- Emits JSON report to stdout and writes `report.json` under run artifact folder
+- Emits JSON report to stdout and writes `report.json` and `report.html` under run artifact folder
 - Logger output is written to stderr; default timestamp mode in backtest is simulation time (`SIM[...]`)
 - Writes stderr stream to `engine.log` under run artifact folder while also printing to console
 
@@ -115,6 +115,7 @@ Compiles/links and runs a project backtest by orchestrating generated runner + e
   - `projects/<name>/backtests/<strategy>_<YYYY>_<mm>_<dd>_<HH>_<MM>_<SS>_<run_id>/`
 - Files written automatically by `bt run`:
   - `report.json` (captured stdout report)
+  - `report.html` (human-readable HTML report; open in any browser)
   - `engine.log` (captured stderr stream)
 
 **Exit behavior**

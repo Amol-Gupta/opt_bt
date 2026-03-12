@@ -1059,7 +1059,12 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
             name: args.name.clone(),
         },
         engine: Some(EngineSection {
-            path: Some(env!("CARGO_MANIFEST_DIR").to_string()),
+            path: {
+                // Baked by build.rs: non-empty for source builds, empty for
+                // `cargo install --git ...` builds where the engine is on PATH.
+                const ENGINE_PATH: &str = env!("OPT_BT_ENGINE_PATH");
+                if ENGINE_PATH.is_empty() { None } else { Some(ENGINE_PATH.to_string()) }
+            },
             bin: Some("opt_bt".to_string()),
         }),
         run: Some(RunSection {
@@ -1087,26 +1092,21 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
 
     fs::write(
         project_root.join("strategy/Cargo.toml"),
-        format!(
-            r#"[package]
-name = "{crate_name}"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-path = "src/{strategy_file_name}"
-
-[dependencies]
-opt_bt = {{ path = "{root}" }}
-bt_strategy_sdk = {{ path = "{root}/crates/bt_strategy_sdk" }}
-bt_strategy_macros = {{ path = "{root}/crates/bt_strategy_macros" }}
-serde_json = "1"
-log = "0.4"
-"#,
-            crate_name = crate_name,
-            strategy_file_name = strategy_file_name,
-            root = env!("CARGO_MANIFEST_DIR")
-        ),
+        {
+            // Dep specs are baked in by build.rs: path deps for source builds,
+            // git deps for `cargo install --git ...` builds.
+            let dep_root = env!("OPT_BT_DEP_ROOT");
+            let dep_sdk = env!("OPT_BT_DEP_SDK");
+            let dep_macros = env!("OPT_BT_DEP_MACROS");
+            format!(
+                "[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/{strategy_file_name}\"\n\n[dependencies]\n{dep_root}\n{dep_sdk}\n{dep_macros}\nserde_json = \"1\"\nlog = \"0.4\"\n",
+                crate_name = crate_name,
+                strategy_file_name = strategy_file_name,
+                dep_root = dep_root,
+                dep_sdk = dep_sdk,
+                dep_macros = dep_macros,
+            )
+        },
     )?;
     fs::write(
         project_root.join(format!("strategy/src/{}", strategy_file_name)),
@@ -1466,9 +1466,19 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
 
         let profile = engine_profile();
         let engine_manifest = engine_path.join("Cargo.toml");
-        let engine_exec = build_and_resolve_binary(&engine_manifest, engine_bin, &profile)?;
+        // If the manifest exists we're running from source; build then run.
+        // Otherwise (cargo install / git install) resolve the binary from PATH.
+        let (engine_exec, engine_cwd) = if engine_manifest.exists() {
+            let exec = build_and_resolve_binary(&engine_manifest, engine_bin, &profile)?;
+            let cwd  = engine_path.clone();
+            (exec, cwd)
+        } else {
+            let exec = resolve_binary_from_path(engine_bin)?;
+            let cwd  = std::env::current_dir()?;
+            (exec, cwd)
+        };
         let mut cmd = Command::new(engine_exec);
-        cmd.current_dir(engine_path)
+        cmd.current_dir(engine_cwd)
             .args(["--strategy", &engine_strategy])
             .args(["--data-dir", &data])
             .args(["--log-file", log_path.to_string_lossy().as_ref()])
@@ -1610,19 +1620,34 @@ fn run_sweep(args: SweepArgs) -> Result<(), DynError> {
     }
 
     let profile = engine_profile();
-    let mut cmd = Command::new("cargo");
     let cache_addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
-    let status = cmd
-        .current_dir(engine_path)
-        .args(cargo_run_prefix(engine_bin, &profile))
-        .arg("sweep")
-        .arg("--config")
-        .arg(args.config)
-        .env("BT_CACHE_ADDR", cache_addr)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()?;
+    let engine_manifest = engine_path.join("Cargo.toml");
+    let status = if engine_manifest.exists() {
+        // Source build: rebuild if needed, then run via `cargo run`.
+        Command::new("cargo")
+            .current_dir(&engine_path)
+            .args(cargo_run_prefix(engine_bin, &profile))
+            .arg("sweep")
+            .arg("--config")
+            .arg(&args.config)
+            .env("BT_CACHE_ADDR", &cache_addr)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?
+    } else {
+        // Installed build: engine binary is already on PATH.
+        let engine_exec = resolve_binary_from_path(engine_bin)?;
+        Command::new(engine_exec)
+            .arg("sweep")
+            .arg("--config")
+            .arg(&args.config)
+            .env("BT_CACHE_ADDR", &cache_addr)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?
+    };
 
     if !status.success() {
         return Err(format!("bt sweep failed with status: {status}").into());
@@ -2253,7 +2278,6 @@ fn binary_needs_rebuild(manifest_path: &Path, binary_path: &Path) -> Result<bool
     if !binary_path.exists() {
         return Ok(true);
     }
-
     let binary_modified = fs::metadata(binary_path)
         .and_then(|meta| meta.modified())
         .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -2295,6 +2319,33 @@ fn binary_needs_rebuild(manifest_path: &Path, binary_path: &Path) -> Result<bool
     }
 
     Ok(false)
+}
+
+/// Locate an installed binary by searching `~/.cargo/bin` then `PATH`.
+/// Used when running `bt` that was installed via `cargo install --git ...`
+/// and no engine source tree is present.
+fn resolve_binary_from_path(name: &str) -> Result<PathBuf, DynError> {
+    // ~/.cargo/bin is not always on PATH, so check it explicitly first.
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(home).join(".cargo").join("bin").join(name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+    Err(format!(
+        "Cannot find '{name}': not in ~/.cargo/bin or PATH, and engine source \
+         is unavailable. Install with: \
+         cargo install --git https://github.com/Amol-Gupta/opt_bt --bin {name}"
+    )
+    .into())
 }
 
 fn newest_mtime_recursive(path: &Path) -> Result<SystemTime, DynError> {

@@ -2,6 +2,11 @@
 name = "bt_strategy_sdk"
 version = "0.1.0"
 edition = "2021"
+description = "Strategy registration SDK for the opt_bt backtesting engine"
+repository = "https://github.com/Amol-Gupta/opt_bt"
+license = "MIT"
+keywords = ["backtest", "options", "trading", "strategy"]
+categories = ["finance", "simulation"]
 
 [dependencies]
 inventory = "0.3"

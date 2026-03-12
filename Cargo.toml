@@ -3,7 +3,11 @@ name = "opt_bt"
 version = "0.1.0"
 edition = "2021"
 authors = ["Amol-Gupta"]
-description = "High-performance options backtesting engine"
+description = "High-performance options backtesting engine for Indian derivatives markets"
+repository = "https://github.com/Amol-Gupta/opt_bt"
+license = "MIT"
+keywords = ["backtest", "options", "trading", "finance", "nifty"]
+categories = ["finance", "simulation", "command-line-utilities"]
 
 [lib]
 name = "opt_bt"
@@ -12,6 +16,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "opt_bt"
 path = "src/main.rs"
+
+[[bin]]
+name = "bt"
+path = "src/bin/bt.rs"
 
 [dependencies]
 # Logging (Low Latency)
@@ -66,4 +74,3 @@ harness = false
 [profile.release]
 debug = true
 lto = "thin"
-rand = "0.8"

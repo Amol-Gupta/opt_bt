@@ -98,17 +98,19 @@ mod tests {
     fn test_build_portfolio_view_aggregates_and_sorts() {
         let mut account = Account::new(1_000_000 * PRICE_SCALE);
         account.trades = vec![];
-        account.trades.resize_with(5, || crate::portfolio::models::Trade {
-            id: 0,
-            order_id: 0,
-            strategy_id: "x".to_string(),
-            instrument_id: 1,
-            side: crate::common::types::Side::Buy,
-            quantity: 1,
-            price: 100 * PRICE_SCALE,
-            timestamp: 0,
-            fee: 0,
-        });
+        account
+            .trades
+            .resize_with(5, || crate::portfolio::models::Trade {
+                id: 0,
+                order_id: 0,
+                strategy_id: "x".to_string(),
+                instrument_id: 1,
+                side: crate::common::types::Side::Buy,
+                quantity: 1,
+                price: 100 * PRICE_SCALE,
+                timestamp: 0,
+                fee: 0,
+            });
 
         account.strategy_attribution = HashMap::from([
             (

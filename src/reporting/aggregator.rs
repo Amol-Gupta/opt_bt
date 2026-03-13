@@ -6,13 +6,13 @@ use std::collections::HashMap;
 #[derive(Debug, Serialize)]
 pub struct AggregatedSummary {
     pub total_runs: usize,
-    
+
     // Summary Statistics
     pub best_return_pct: f64,
     pub worst_return_pct: f64,
     pub average_return_pct: f64,
     pub median_return_pct: f64,
-    
+
     // Best Run Details
     pub best_run_params: HashMap<String, String>,
     pub best_run_metrics: Metrics,
@@ -28,12 +28,15 @@ pub struct AggregatedSummary {
 impl AggregatedSummary {
     pub fn compute(results: &[SweepResult]) -> Self {
         if results.is_empty() {
-             panic!("Cannot aggregate empty results");
+            panic!("Cannot aggregate empty results");
         }
 
-        let mut returns: Vec<f64> = results.iter().map(|r| r.report.metrics.total_return_pct).collect();
+        let mut returns: Vec<f64> = results
+            .iter()
+            .map(|r| r.report.metrics.total_return_pct)
+            .collect();
         returns.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let total_runs = results.len();
         let best_return_pct = *returns.last().unwrap();
         let worst_return_pct = *returns.first().unwrap();
@@ -41,10 +44,17 @@ impl AggregatedSummary {
         let median_return_pct = returns[total_runs / 2];
 
         // Find best run (by total_return_pct)
-        let best_run = results.iter()
-            .max_by(|a, b| a.report.metrics.total_return_pct.partial_cmp(&b.report.metrics.total_return_pct).unwrap_or(std::cmp::Ordering::Equal))
+        let best_run = results
+            .iter()
+            .max_by(|a, b| {
+                a.report
+                    .metrics
+                    .total_return_pct
+                    .partial_cmp(&b.report.metrics.total_return_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap();
-            
+
         // Manual copy of metrics if Clone not available
         let best_metrics = Metrics {
             benchmark_symbol: best_run.report.metrics.benchmark_symbol.clone(),

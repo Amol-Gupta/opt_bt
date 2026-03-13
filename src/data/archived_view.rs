@@ -86,7 +86,7 @@ impl MarketDataView for ArchivedMarketDataView {
         self.archived()
             .bars_by_time
             .iter()
-                .map(|(timestamp, _)| i64::from(*timestamp))
+            .map(|(timestamp, _)| i64::from(*timestamp))
             .collect()
     }
 
@@ -223,7 +223,10 @@ mod tests {
         assert_eq!(owned.market_timeline(), archived_view.market_timeline());
 
         for (instrument_id, symbol) in owned.iter_ids() {
-            assert_eq!(owned.get_symbol(instrument_id), archived_view.get_symbol(instrument_id));
+            assert_eq!(
+                owned.get_symbol(instrument_id),
+                archived_view.get_symbol(instrument_id)
+            );
             assert_eq!(owned.get_id(&symbol), archived_view.get_id(&symbol));
         }
 
@@ -258,8 +261,14 @@ mod tests {
             archived_view.get_bar_at_or_before(option_id, 1_704_067_280)
         );
 
-        assert_eq!(owned.get_instrument(index_id), archived_view.get_instrument(index_id));
-        assert_eq!(owned.get_instrument(option_id), archived_view.get_instrument(option_id));
+        assert_eq!(
+            owned.get_instrument(index_id),
+            archived_view.get_instrument(index_id)
+        );
+        assert_eq!(
+            owned.get_instrument(option_id),
+            archived_view.get_instrument(option_id)
+        );
 
         let option = archived_view.get_instrument(option_id).unwrap();
         assert_eq!(option.kind, InstrumentKind::Option);

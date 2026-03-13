@@ -7,9 +7,7 @@ fn bench_cache_ensure_loaded(c: &mut Criterion) {
     c.bench_function("cache_store_cold_load", |b| {
         b.iter(|| {
             let mut store = CacheStore::new(false);
-            let _ = store
-                .ensure_loaded(path)
-                .expect("cold load should succeed");
+            let _ = store.ensure_loaded(path).expect("cold load should succeed");
         });
     });
 
@@ -20,9 +18,7 @@ fn bench_cache_ensure_loaded(c: &mut Criterion) {
             .expect("setup cold load should succeed");
 
         b.iter(|| {
-            let _ = store
-                .ensure_loaded(path)
-                .expect("warm hit should succeed");
+            let _ = store.ensure_loaded(path).expect("warm hit should succeed");
         });
     });
 }

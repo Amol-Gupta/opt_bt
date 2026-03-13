@@ -1,6 +1,6 @@
-use crate::strategy::Strategy;
 use crate::common::context::Context;
-use crate::common::event::{MarketEvent, OrderEvent, FillEvent, SignalEvent};
+use crate::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
+use crate::strategy::Strategy;
 use std::collections::HashMap;
 
 pub struct PortfolioStrategy {
@@ -10,6 +10,7 @@ pub struct PortfolioStrategy {
 }
 
 impl PortfolioStrategy {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             strategies: HashMap::new(),
@@ -62,7 +63,7 @@ impl Strategy for PortfolioStrategy {
         }
         ctx.set_strategy_id("default");
     }
-    
+
     fn on_date_change(&mut self, ctx: &mut Context) {
         for (id, strategy) in &mut self.strategies {
             ctx.set_strategy_id(id);
@@ -97,7 +98,8 @@ impl Strategy for PortfolioStrategy {
 
     fn on_order_event(&mut self, ctx: &mut Context, event: &OrderEvent) {
         // Record order -> strategy mapping to support deterministic fill fallback routing.
-        self.order_map.insert(event.order_id, event.strategy_id.clone());
+        self.order_map
+            .insert(event.order_id, event.strategy_id.clone());
 
         if let Some(strategy) = self.strategies.get_mut(&event.strategy_id) {
             ctx.set_strategy_id(&event.strategy_id);

@@ -53,10 +53,7 @@ impl Strategy for SmaNifty50Strategy {
             None => return,
         };
 
-        let history = self
-            .close_history
-            .entry(event.instrument_id)
-            .or_default();
+        let history = self.close_history.entry(event.instrument_id).or_default();
         history.push_back(bar.close);
         while history.len() > self.long_period {
             history.pop_front();
@@ -73,13 +70,23 @@ impl Strategy for SmaNifty50Strategy {
 
         let state = self.position.entry(event.instrument_id).or_insert(0);
         if short_sma > long_sma && *state <= 0 {
-            ctx.place_order(event.instrument_id, Side::Buy, OrderType::Market, self.quantity);
+            ctx.place_order(
+                event.instrument_id,
+                Side::Buy,
+                OrderType::Market,
+                self.quantity,
+            );
             *state = 1;
             return;
         }
 
         if short_sma < long_sma && *state >= 0 {
-            ctx.place_order(event.instrument_id, Side::Sell, OrderType::Market, self.quantity);
+            ctx.place_order(
+                event.instrument_id,
+                Side::Sell,
+                OrderType::Market,
+                self.quantity,
+            );
             *state = -1;
         }
     }

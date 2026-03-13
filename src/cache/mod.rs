@@ -8,13 +8,8 @@ pub mod snapshot;
 pub mod store;
 
 use crate::cache::ipc::{
-    decode_request,
-    encode_ensure_loaded_ok,
-    encode_error,
-    encode_evict_ok,
-    encode_pong,
-    encode_status_ok,
-    CacheRequest,
+    decode_request, encode_ensure_loaded_ok, encode_error, encode_evict_ok, encode_pong,
+    encode_status_ok, CacheRequest,
 };
 use crate::cache::store::CacheStore;
 

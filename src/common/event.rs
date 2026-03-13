@@ -1,6 +1,6 @@
+use crate::common::types::{OrderType, Side, Status};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use crate::common::types::{OrderType, Side, Status};
 // use crate::strategy::Signal; // Not defined yet
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,7 +52,6 @@ pub struct FillEvent {
     pub strategy_id: String,
 }
 
-
 impl Event {
     pub fn timestamp(&self) -> i64 {
         match self {
@@ -86,24 +85,25 @@ pub struct EventQueue {
 }
 
 impl EventQueue {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             queue: BinaryHeap::new(),
         }
     }
-    
+
     pub fn push(&mut self, event: Event) {
         self.queue.push(event);
     }
-    
+
     pub fn pop(&mut self) -> Option<Event> {
         self.queue.pop()
     }
-    
+
     pub fn peek(&self) -> Option<&Event> {
         self.queue.peek()
     }
-    
+
     pub fn len(&self) -> usize {
         self.queue.len()
     }
@@ -120,15 +120,24 @@ mod tests {
     #[test]
     fn test_event_ordering() {
         let mut queue = EventQueue::new();
-        
-        let e1 = Event::Market(MarketEvent { timestamp: 100, instrument_id: 1 });
-        let e2 = Event::Market(MarketEvent { timestamp: 50, instrument_id: 1 });
-        let e3 = Event::Market(MarketEvent { timestamp: 150, instrument_id: 1 });
-        
+
+        let e1 = Event::Market(MarketEvent {
+            timestamp: 100,
+            instrument_id: 1,
+        });
+        let e2 = Event::Market(MarketEvent {
+            timestamp: 50,
+            instrument_id: 1,
+        });
+        let e3 = Event::Market(MarketEvent {
+            timestamp: 150,
+            instrument_id: 1,
+        });
+
         queue.push(e1);
         queue.push(e2);
         queue.push(e3);
-        
+
         // Should pop e2 (50), then e1 (100), then e3 (150)
         assert_eq!(queue.pop().unwrap().timestamp(), 50);
         assert_eq!(queue.pop().unwrap().timestamp(), 100);
@@ -136,4 +145,3 @@ mod tests {
         assert!(queue.pop().is_none());
     }
 }
-

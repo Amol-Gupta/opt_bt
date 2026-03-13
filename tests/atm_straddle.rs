@@ -55,8 +55,12 @@ fn test_atm_straddle_sells_at_10_exits_at_11() {
         );
     }
 
-    let ce_id = market_data.get_id(ce_symbol).expect("CE instrument missing");
-    let pe_id = market_data.get_id(pe_symbol).expect("PE instrument missing");
+    let ce_id = market_data
+        .get_id(ce_symbol)
+        .expect("CE instrument missing");
+    let pe_id = market_data
+        .get_id(pe_symbol)
+        .expect("PE instrument missing");
 
     let strategy = AtmStraddleSellStrategy::new(index_symbol, 1);
     let mut engine = Engine::new(strategy, Arc::new(market_data), 1_000_000 * 10_000);
@@ -138,9 +142,15 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
         );
     }
 
-    let near_ce_id = market_data.get_id(near_ce_symbol).expect("near CE instrument missing");
-    let near_pe_id = market_data.get_id(near_pe_symbol).expect("near PE instrument missing");
-    let far_ce_id = market_data.get_id(far_ce_symbol).expect("far CE instrument missing");
+    let near_ce_id = market_data
+        .get_id(near_ce_symbol)
+        .expect("near CE instrument missing");
+    let near_pe_id = market_data
+        .get_id(near_pe_symbol)
+        .expect("near PE instrument missing");
+    let far_ce_id = market_data
+        .get_id(far_ce_symbol)
+        .expect("far CE instrument missing");
 
     market_data.upsert_instrument(Instrument {
         id: near_ce_id,
@@ -193,9 +203,13 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
     assert!(log.iter().any(|line| line.contains("on_stop")));
 
     assert!(
-        !log.iter().any(|line| line.contains(&format!("ce_id={}", far_ce_id))),
+        !log.iter()
+            .any(|line| line.contains(&format!("ce_id={}", far_ce_id))),
         "far expiry contract should not be selected for ATM straddle"
     );
 
-    assert!(engine.context.active_subscriptions().is_empty(), "subscriptions should be cleared after close");
+    assert!(
+        engine.context.active_subscriptions().is_empty(),
+        "subscriptions should be cleared after close"
+    );
 }

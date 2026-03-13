@@ -1,16 +1,15 @@
 use clap::{Args, Parser, Subcommand};
 use opt_bt::cache::ipc as cache_ipc;
 use opt_bt::cache::snapshot::{
-    load_market_data_snapshot,
-    load_market_data_snapshot_view_with_backend,
+    load_market_data_snapshot, load_market_data_snapshot_view_with_backend,
     validate_shared_snapshot_handle,
 };
-use opt_bt::reporting::html::write_html_report;
-use opt_bt::reporting::json::BacktestReport;
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
 use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
 use opt_bt::data::models::{Bar, MarketData};
+use opt_bt::reporting::html::write_html_report;
+use opt_bt::reporting::json::BacktestReport;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -112,7 +111,11 @@ enum ProjectCommands {
 struct WorkspaceInitArgs {
     #[arg(long, help = "Workspace root path (defaults to current directory)")]
     path: Option<PathBuf>,
-    #[arg(long, default_value_t = false, help = "Overwrite existing workspace files")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Overwrite existing workspace files"
+    )]
     force: bool,
 }
 
@@ -122,12 +125,18 @@ struct ProjectInitArgs {
     name: String,
     #[arg(long, help = "Workspace root path")]
     workspace: Option<PathBuf>,
-    #[arg(long, default_value_t = false, help = "Overwrite existing project folder")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Overwrite existing project folder"
+    )]
     force: bool,
 }
 
 #[derive(Args, Debug)]
-#[command(after_help = "Configuration sourcing for bt run:\n  Required:\n    --project\n    --start-date (or BT_START_DATE or [run].start_date)\n    --end-date (or BT_END_DATE or [run].end_date)\n\n  Optional (can be sourced):\n    --strategy      <- BT_STRATEGY <- [run].default_strategy <- built-in default\n    --data          <- BT_DATA <- [run].data <- built-in default\n    --log-time-mode <- [run].log_time_mode <- simulation\n\n  Params merge order:\n    [run.params] then BT_PARAMS (comma-separated k=v) then --params (repeatable)\n\n  Overall precedence:\n    CLI > environment variables > bt.toml > defaults")]
+#[command(
+    after_help = "Configuration sourcing for bt run:\n  Required:\n    --project\n    --start-date (or BT_START_DATE or [run].start_date)\n    --end-date (or BT_END_DATE or [run].end_date)\n\n  Optional (can be sourced):\n    --strategy      <- BT_STRATEGY <- [run].default_strategy <- built-in default\n    --data          <- BT_DATA <- [run].data <- built-in default\n    --log-time-mode <- [run].log_time_mode <- simulation\n\n  Params merge order:\n    [run.params] then BT_PARAMS (comma-separated k=v) then --params (repeatable)\n\n  Overall precedence:\n    CLI > environment variables > bt.toml > defaults"
+)]
 struct RunArgs {
     #[arg(long, help = "Project name inside workspace")]
     project: String,
@@ -145,9 +154,16 @@ struct RunArgs {
     config: Option<PathBuf>,
     #[arg(long, help = "Logger timestamp mode (simulation|wall)")]
     log_time_mode: Option<String>,
-    #[arg(long, help = "Benchmark symbol for relative performance metrics", default_value = "NIFTY 50")]
+    #[arg(
+        long,
+        help = "Benchmark symbol for relative performance metrics",
+        default_value = "NIFTY 50"
+    )]
     benchmark: String,
-    #[arg(long = "params", help = "Strategy/runtime parameter override as key=value (repeatable)")]
+    #[arg(
+        long = "params",
+        help = "Strategy/runtime parameter override as key=value (repeatable)"
+    )]
     params: Vec<String>,
 }
 
@@ -177,17 +193,33 @@ struct CleanArgs {
     project: Option<String>,
     #[arg(long, help = "Workspace root path")]
     workspace: Option<PathBuf>,
-    #[arg(long, default_value_t = false, help = "Remove only generated files under project")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Remove only generated files under project"
+    )]
     generated_only: bool,
-    #[arg(long, default_value_t = false, help = "Remove workspace cache artifacts")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Remove workspace cache artifacts"
+    )]
     all_cache: bool,
 }
 
 #[derive(Args, Debug)]
 struct CacheServerArgs {
-    #[arg(long, default_value = "127.0.0.1:7878", help = "Bind address for cache server")]
+    #[arg(
+        long,
+        default_value = "127.0.0.1:7878",
+        help = "Bind address for cache server"
+    )]
     bind: String,
-    #[arg(long, default_value_t = false, help = "Include SHA256 in dataset fingerprinting")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Include SHA256 in dataset fingerprinting"
+    )]
     include_sha256: bool,
 }
 
@@ -253,7 +285,11 @@ struct DataIndexArgs {
     end_date: Option<String>,
     #[arg(long, help = "Minute filter (HH:MM)")]
     minute: Option<String>,
-    #[arg(long, default_value_t = 0, help = "If --minute set, include +/- N minutes")]
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "If --minute set, include +/- N minutes"
+    )]
     window_minutes: i64,
 }
 
@@ -295,9 +331,16 @@ struct DataSliceArgs {
     points: i64,
     #[arg(long, default_value = "NIFTY", help = "Option underlying prefix")]
     underlying: String,
-    #[arg(long, help = "Optional expiry yyyymmdd (defaults to nearest weekly expiry)")]
+    #[arg(
+        long,
+        help = "Optional expiry yyyymmdd (defaults to nearest weekly expiry)"
+    )]
     expiry: Option<i32>,
-    #[arg(long, default_value_t = false, help = "Fill forward missing bars from previous bar")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Fill forward missing bars from previous bar"
+    )]
     fill_forward: bool,
 }
 
@@ -446,14 +489,10 @@ fn run_cache_warm_cmd(args: CacheWarmArgs) -> Result<(), DynError> {
     let env_start_date = std::env::var("BT_START_DATE").ok();
     let env_end_date = std::env::var("BT_END_DATE").ok();
 
-    let data = args
-        .data
-        .or(env_data)
-        .or(run_cfg.data)
-        .ok_or_else(|| {
-            "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
-                .to_string()
-        })?;
+    let data = args.data.or(env_data).or(run_cfg.data).ok_or_else(|| {
+        "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
+            .to_string()
+    })?;
 
     if !Path::new(&data).exists() {
         return Err(format!("configured data path does not exist: {data}").into());
@@ -534,14 +573,10 @@ fn run_cache_load_bench_cmd(args: CacheLoadBenchArgs) -> Result<(), DynError> {
     let env_start_date = std::env::var("BT_START_DATE").ok();
     let env_end_date = std::env::var("BT_END_DATE").ok();
 
-    let data = args
-        .data
-        .or(env_data)
-        .or(run_cfg.data)
-        .ok_or_else(|| {
-            "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
-                .to_string()
-        })?;
+    let data = args.data.or(env_data).or(run_cfg.data).ok_or_else(|| {
+        "missing data path: provide --data, set BT_DATA, or pass --project with [run].data"
+            .to_string()
+    })?;
 
     if !Path::new(&data).exists() {
         return Err(format!("configured data path does not exist: {data}").into());
@@ -631,8 +666,13 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
     };
     let window_seconds = args.window_minutes.max(0) * 60;
 
-    println!("symbol={} data={} start_date={} end_date={}", args.symbol, data, start_date, end_date);
-    println!("timestamp             date       time   open      high      low       close     volume");
+    println!(
+        "symbol={} data={} start_date={} end_date={}",
+        args.symbol, data, start_date, end_date
+    );
+    println!(
+        "timestamp             date       time   open      high      low       close     volume"
+    );
 
     let mut count = 0usize;
     for bar in bars {
@@ -657,7 +697,8 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
 
 fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
     let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
-    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(&args.start_date, &args.end_date)?;
+    let (start_ts, end_ts) =
+        opt_bt::config::parse_date_range_to_epoch(&args.start_date, &args.end_date)?;
     let market_data = load_market_data_for_query(&data, Some((start_ts, end_ts)))?;
 
     let instrument_id = market_data
@@ -673,14 +714,11 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
 
     println!(
         "symbol={} data={} start_date={} end_date={} start_time={} end_time={}",
-        args.symbol,
-        data,
-        args.start_date,
-        args.end_date,
-        args.start_time,
-        args.end_time
+        args.symbol, data, args.start_date, args.end_date, args.start_time, args.end_time
     );
-    println!("timestamp             date       time   open      high      low       close     volume");
+    println!(
+        "timestamp             date       time   open      high      low       close     volume"
+    );
 
     let mut count = 0usize;
     for bar in bars {
@@ -702,7 +740,8 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
 
 fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
     let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
-    let (day_start_ts, day_end_ts) = opt_bt::config::parse_date_range_to_epoch(&args.date, &args.date)?;
+    let (day_start_ts, day_end_ts) =
+        opt_bt::config::parse_date_range_to_epoch(&args.date, &args.date)?;
     let market_data = load_market_data_for_query(&data, Some((day_start_ts, day_end_ts)))?;
     let query_ts = parse_date_time_utc_epoch(&args.date, &args.time)?;
     let query_minute_end_ts = query_ts + 59;
@@ -710,13 +749,14 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
 
     let expiry = match args.expiry {
         Some(value) => value,
-        None => nearest_weekly_expiry(&market_data, &args.underlying, query_yyyymmdd)
-            .ok_or_else(|| {
+        None => nearest_weekly_expiry(&market_data, &args.underlying, query_yyyymmdd).ok_or_else(
+            || {
                 format!(
                     "no nearest weekly expiry found for underlying={} date={}",
                     args.underlying, args.date
                 )
-            })?,
+            },
+        )?,
     };
 
     let min_strike = args.center_strike - args.points;
@@ -826,16 +866,7 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
         } else {
             println!(
                 "{:<7} {:<4} {:<27} {:<10} {:<20} {:<9} {:<9} {:<9} {:<9} {:<8}",
-                strike,
-                type_label,
-                symbol,
-                status,
-                "-",
-                "-",
-                "-",
-                "-",
-                "-",
-                "-"
+                strike, type_label, symbol, status, "-", "-", "-", "-", "-", "-"
             );
         }
         rows += 1;
@@ -928,7 +959,11 @@ fn yyyymmdd_from_date(date: &str) -> Result<i32, DynError> {
         .parse::<i32>()?)
 }
 
-fn nearest_weekly_expiry(market_data: &MarketData, underlying: &str, today_yyyymmdd: i32) -> Option<i32> {
+fn nearest_weekly_expiry(
+    market_data: &MarketData,
+    underlying: &str,
+    today_yyyymmdd: i32,
+) -> Option<i32> {
     let today = yyyymmdd_to_date(today_yyyymmdd)?;
     let underlying_upper = underlying.to_ascii_uppercase();
 
@@ -1019,12 +1054,7 @@ fn workspace_init(args: WorkspaceInitArgs) -> Result<(), DynError> {
 fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
     let root = discover_workspace_root(args.workspace)?;
     let manifest = load_workspace_manifest(&root)?;
-    let projects_dir = root.join(
-        manifest
-            .projects_dir
-            .as_deref()
-            .unwrap_or("projects"),
-    );
+    let projects_dir = root.join(manifest.projects_dir.as_deref().unwrap_or("projects"));
     let project_root = projects_dir.join(&args.name);
 
     if project_root.exists() {
@@ -1063,7 +1093,11 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
                 // Baked by build.rs: non-empty for source builds, empty for
                 // `cargo install --git ...` builds where the engine is on PATH.
                 const ENGINE_PATH: &str = env!("OPT_BT_ENGINE_PATH");
-                if ENGINE_PATH.is_empty() { None } else { Some(ENGINE_PATH.to_string()) }
+                if ENGINE_PATH.is_empty() {
+                    None
+                } else {
+                    Some(ENGINE_PATH.to_string())
+                }
             },
             bin: Some("opt_bt".to_string()),
         }),
@@ -1090,15 +1124,13 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
         toml::to_string_pretty(&project_file)?,
     )?;
 
-    fs::write(
-        project_root.join("strategy/Cargo.toml"),
-        {
-            // Dep specs are baked in by build.rs: path deps for source builds,
-            // git deps for `cargo install --git ...` builds.
-            let dep_root = env!("OPT_BT_DEP_ROOT");
-            let dep_sdk = env!("OPT_BT_DEP_SDK");
-            let dep_macros = env!("OPT_BT_DEP_MACROS");
-            format!(
+    fs::write(project_root.join("strategy/Cargo.toml"), {
+        // Dep specs are baked in by build.rs: path deps for source builds,
+        // git deps for `cargo install --git ...` builds.
+        let dep_root = env!("OPT_BT_DEP_ROOT");
+        let dep_sdk = env!("OPT_BT_DEP_SDK");
+        let dep_macros = env!("OPT_BT_DEP_MACROS");
+        format!(
                 "[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/{strategy_file_name}\"\n\n[dependencies]\n{dep_root}\n{dep_sdk}\n{dep_macros}\nserde_json = \"1\"\nlog = \"0.4\"\n",
                 crate_name = crate_name,
                 strategy_file_name = strategy_file_name,
@@ -1106,8 +1138,7 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
                 dep_sdk = dep_sdk,
                 dep_macros = dep_macros,
             )
-        },
-    )?;
+    })?;
     fs::write(
         project_root.join(format!("strategy/src/{}", strategy_file_name)),
         format!(
@@ -1406,7 +1437,8 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     }
 
     let metadata = discover_strategy_metadata(&project_root)?;
-    let merged_params = merge_runtime_params(run_cfg.params.clone(), env_params.clone(), &args.params)?;
+    let merged_params =
+        merge_runtime_params(run_cfg.params.clone(), env_params.clone(), &args.params)?;
     validate_strategy_params(&strategy, &merged_params, &metadata)?;
 
     let is_builtin_strategy = known_stage1_strategies()
@@ -1430,10 +1462,7 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let resolved_end_date = end_date
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let resolved_end_date = end_date.as_deref().map(str::trim).filter(|s| !s.is_empty());
     if resolved_start_date.is_none() || resolved_end_date.is_none() {
         let mut missing = Vec::new();
         if resolved_start_date.is_none() {
@@ -1450,10 +1479,8 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
     }
     let resolved_start_date = resolved_start_date.expect("validated above").to_string();
     let resolved_end_date = resolved_end_date.expect("validated above").to_string();
-    let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(
-        &resolved_start_date,
-        &resolved_end_date,
-    )?;
+    let (start_ts, end_ts) =
+        opt_bt::config::parse_date_range_to_epoch(&resolved_start_date, &resolved_end_date)?;
     let cache_timing = attempt_cache_ensure_loaded(&data, Some((start_ts, end_ts)))?;
 
     let run_started = Instant::now();
@@ -1470,11 +1497,11 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
         // Otherwise (cargo install / git install) resolve the binary from PATH.
         let (engine_exec, engine_cwd) = if engine_manifest.exists() {
             let exec = build_and_resolve_binary(&engine_manifest, engine_bin, &profile)?;
-            let cwd  = engine_path.clone();
+            let cwd = engine_path.clone();
             (exec, cwd)
         } else {
             let exec = resolve_binary_from_path(engine_bin)?;
-            let cwd  = std::env::current_dir()?;
+            let cwd = std::env::current_dir()?;
             (exec, cwd)
         };
         let mut cmd = Command::new(engine_exec);
@@ -1555,19 +1582,10 @@ fn run_backtest(args: RunArgs) -> Result<(), DynError> {
 
     eprintln!(
         "bt: timing cache_lookup_ms={} cache_load_ms={} cache_hit={} run_ms={}",
-        timing.cache_lookup_ms,
-        timing.cache_load_ms,
-        timing.cache_hit,
-        timing.backtest_run_ms
+        timing.cache_lookup_ms, timing.cache_load_ms, timing.cache_hit, timing.backtest_run_ms
     );
-    eprintln!(
-        "bt: artifacts written to {}",
-        output_dir.to_string_lossy()
-    );
-    eprintln!(
-        "bt: HTML report: {}",
-        html_path.to_string_lossy()
-    );
+    eprintln!("bt: artifacts written to {}", output_dir.to_string_lossy());
+    eprintln!("bt: HTML report: {}", html_path.to_string_lossy());
     Ok(())
 }
 
@@ -1613,14 +1631,13 @@ fn run_sweep(args: SweepArgs) -> Result<(), DynError> {
         let cache_timing = attempt_cache_ensure_loaded(&sweep_data_path, None)?;
         eprintln!(
             "bt: sweep cache timing cache_lookup_ms={} cache_load_ms={} cache_hit={}",
-            cache_timing.cache_lookup_ms,
-            cache_timing.cache_load_ms,
-            cache_timing.cache_hit
+            cache_timing.cache_lookup_ms, cache_timing.cache_load_ms, cache_timing.cache_hit
         );
     }
 
     let profile = engine_profile();
-    let cache_addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let cache_addr =
+        std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
     let engine_manifest = engine_path.join("Cargo.toml");
     let status = if engine_manifest.exists() {
         // Source build: rebuild if needed, then run via `cargo run`.
@@ -1701,8 +1718,7 @@ fn list_strategies(args: ListStrategiesArgs) -> Result<(), DynError> {
 
     if !allow_stage1_fallback {
         return Err(
-            "strategy discovery failed and stage-1 fallback is disabled in project config"
-                .into(),
+            "strategy discovery failed and stage-1 fallback is disabled in project config".into(),
         );
     }
 
@@ -1752,15 +1768,15 @@ fn resolve_project_root(
     manifest: &WorkspaceManifest,
     project: &str,
 ) -> Result<PathBuf, DynError> {
-    let projects_dir = root.join(
-        manifest
-            .projects_dir
-            .as_deref()
-            .unwrap_or("projects"),
-    );
+    let projects_dir = root.join(manifest.projects_dir.as_deref().unwrap_or("projects"));
     let project_root = projects_dir.join(project);
     if !project_root.exists() {
-        return Err(format!("project '{}' not found at {}", project, project_root.display()).into());
+        return Err(format!(
+            "project '{}' not found at {}",
+            project,
+            project_root.display()
+        )
+        .into());
     }
     Ok(project_root)
 }
@@ -1795,6 +1811,7 @@ pub const STRATEGIES: &[&str] = &[
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project_strategy(
     project_root: &Path,
     strategy_id: &str,
@@ -1826,8 +1843,7 @@ fn run_project_strategy(
     let exec_path = build_and_resolve_binary(&strategy_manifest, "bt_run_project", &profile)?;
 
     let mut cmd = Command::new(exec_path);
-    cmd
-        .args(["--strategy-id", strategy_id])
+    cmd.args(["--strategy-id", strategy_id])
         .args(["--data", &data_path])
         .args(["--initial-capital", &initial_capital.to_string()])
         .args(["--log-time-mode", log_time_mode])
@@ -1973,7 +1989,10 @@ fn known_stage1_strategies() -> Vec<String> {
     ]
 }
 
-fn resolve_runtime_strategy_ids(project_root: &Path, allow_stage1_fallback: bool) -> Result<Vec<String>, DynError> {
+fn resolve_runtime_strategy_ids(
+    project_root: &Path,
+    allow_stage1_fallback: bool,
+) -> Result<Vec<String>, DynError> {
     let discovered = discover_strategy_metadata(project_root)?;
     if !discovered.is_empty() {
         let mut ids: Vec<String> = discovered.into_iter().map(|item| item.id).collect();
@@ -1986,8 +2005,7 @@ fn resolve_runtime_strategy_ids(project_root: &Path, allow_stage1_fallback: bool
 
     if !allow_stage1_fallback {
         return Err(
-            "strategy discovery failed and stage-1 fallback is disabled in project config"
-                .into(),
+            "strategy discovery failed and stage-1 fallback is disabled in project config".into(),
         );
     }
 
@@ -2002,7 +2020,9 @@ fn stage1_fallback_enabled(project_file: &ProjectFile) -> bool {
         .unwrap_or(true)
 }
 
-fn discover_strategy_metadata(project_root: &Path) -> Result<Vec<StrategyMetadataRecord>, DynError> {
+fn discover_strategy_metadata(
+    project_root: &Path,
+) -> Result<Vec<StrategyMetadataRecord>, DynError> {
     if let Some(json) = discover_strategy_metadata_json(project_root)? {
         let discovered: Vec<StrategyMetadataRecord> = serde_json::from_str(&json)?;
         return Ok(discovered);
@@ -2089,11 +2109,13 @@ fn validate_strategy_params(
     }
 
     for spec in &strategy_meta.parameters {
-        if spec.required && spec.default_value.is_none() && !params.contains_key(spec.name.as_str()) {
-            return Err(
-                format!("missing required parameter '{}' for strategy '{}'", spec.name, strategy_id)
-                    .into(),
-            );
+        if spec.required && spec.default_value.is_none() && !params.contains_key(spec.name.as_str())
+        {
+            return Err(format!(
+                "missing required parameter '{}' for strategy '{}'",
+                spec.name, strategy_id
+            )
+            .into());
         }
     }
 
@@ -2174,11 +2196,7 @@ fn discover_strategy_metadata_json(project_root: &Path) -> Result<Option<String>
             return Err("strategy discovery failed (bt_list_strategies exited non-zero)".into());
         }
 
-        return Err(format!(
-            "strategy discovery compile/run failed:\n{}",
-            trimmed
-        )
-        .into());
+        return Err(format!("strategy discovery compile/run failed:\n{}", trimmed).into());
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -2191,14 +2209,13 @@ fn discover_strategy_metadata_json(project_root: &Path) -> Result<Option<String>
 
 fn print_human_strategy_list(json: &str) -> Result<(), DynError> {
     let parsed: serde_json::Value = serde_json::from_str(json)?;
-    let arr = parsed.as_array().ok_or("strategy metadata output must be array")?;
+    let arr = parsed
+        .as_array()
+        .ok_or("strategy metadata output must be array")?;
 
     println!("Discovered strategies:");
     for item in arr {
-        let id = item
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
         let name = item
             .get("display_name")
             .and_then(|v| v.as_str())
@@ -2230,11 +2247,19 @@ fn cargo_run_prefix<'a>(engine_bin: &'a str, profile: &str) -> Vec<&'a str> {
     args
 }
 
-fn build_and_resolve_binary(manifest_path: &Path, bin_name: &str, profile: &str) -> Result<PathBuf, DynError> {
+fn build_and_resolve_binary(
+    manifest_path: &Path,
+    bin_name: &str,
+    profile: &str,
+) -> Result<PathBuf, DynError> {
     let manifest_dir = manifest_path
         .parent()
         .ok_or_else(|| format!("invalid manifest path: {}", manifest_path.display()))?;
-    let profile_dir = if profile == "release" { "release" } else { "debug" };
+    let profile_dir = if profile == "release" {
+        "release"
+    } else {
+        "debug"
+    };
     let candidate = manifest_dir.join("target").join(profile_dir).join(bin_name);
 
     let force_build = std::env::var("BT_FORCE_BUILD")
@@ -2410,13 +2435,11 @@ fn attempt_cache_ensure_loaded(
             cache_lookup_ms: started.elapsed().as_millis(),
             cache_load_ms: result.load_ms,
         }),
-        Err(err) => {
-            Err(format!(
-                "cache-server is required in cache-only mode: ENSURE failed at {} for {} ({})",
-                addr, data_path, err
-            )
-            .into())
-        }
+        Err(err) => Err(format!(
+            "cache-server is required in cache-only mode: ENSURE failed at {} for {} ({})",
+            addr, data_path, err
+        )
+        .into()),
     }
 }
 

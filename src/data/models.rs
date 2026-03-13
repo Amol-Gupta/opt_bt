@@ -1,8 +1,18 @@
+use crate::common::types::{InstrumentId, InstrumentKind, OptionType, Price, PRICE_SCALE};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use crate::common::types::{InstrumentId, InstrumentKind, OptionType, Price, PRICE_SCALE};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct OptionSpec {
     pub underlying: String,
     pub expiry_yyyymmdd: i32,
@@ -10,7 +20,17 @@ pub struct OptionSpec {
     pub option_type: OptionType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Instrument {
     pub id: InstrumentId,
     pub symbol: String,
@@ -39,7 +59,18 @@ impl Instrument {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Bar {
     pub timestamp: i64, // Unix Timestamp (seconds)
     pub open: Price,    // Price * 10,000
@@ -49,7 +80,17 @@ pub struct Bar {
     pub volume: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct MarketData {
     // Map instrument ID to sorted bars
     pub bars: HashMap<InstrumentId, Vec<Bar>>,
@@ -64,6 +105,7 @@ pub struct MarketData {
 }
 
 impl MarketData {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             bars: HashMap::new(),
@@ -82,26 +124,29 @@ impl MarketData {
     }
 
     pub fn add_bar(&mut self, symbol: &str, bar: Bar) {
-        let id = *self.instruments.entry(symbol.to_string()).or_insert_with(|| {
-            let next_id = self.ids.len() as u32 + 1;
-            self.ids.insert(next_id, symbol.to_string());
-            self.instrument_meta
-                .entry(next_id)
-                .or_insert_with(|| infer_instrument(next_id, symbol));
-            next_id
-        });
-        
-        self.bars.entry(id).or_insert_with(Vec::new).push(bar);
+        let id = *self
+            .instruments
+            .entry(symbol.to_string())
+            .or_insert_with(|| {
+                let next_id = self.ids.len() as u32 + 1;
+                self.ids.insert(next_id, symbol.to_string());
+                self.instrument_meta
+                    .entry(next_id)
+                    .or_insert_with(|| infer_instrument(next_id, symbol));
+                next_id
+            });
+
+        self.bars.entry(id).or_default().push(bar);
         self.bars_by_time
             .entry(bar.timestamp)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(id, bar);
     }
-    
+
     pub fn get_id(&self, symbol: &str) -> Option<InstrumentId> {
         self.instruments.get(symbol).copied()
     }
-    
+
     pub fn get_symbol(&self, id: InstrumentId) -> Option<&str> {
         self.ids.get(&id).map(|s| s.as_str())
     }
@@ -116,7 +161,11 @@ impl MarketData {
             .and_then(|bars| bars.get(&instrument_id))
     }
 
-    pub fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<&Bar> {
+    pub fn get_bar_at_or_before(
+        &self,
+        instrument_id: InstrumentId,
+        timestamp: i64,
+    ) -> Option<&Bar> {
         if let Some(bar) = self.get_bar_at(instrument_id, timestamp) {
             return Some(bar);
         }
@@ -206,7 +255,7 @@ fn parse_expiry_token(token: &str) -> Option<i32> {
     };
 
     let year = 2000 + year_suffix;
-    Some((year as i32) * 10_000 + (month as i32) * 100 + day as i32)
+    Some((year as i32) * 10_000 + month * 100 + day as i32)
 }
 
 #[cfg(test)]
@@ -225,9 +274,9 @@ mod tests {
             close: 102 * PRICE_SCALE,
             volume: 500,
         };
-        
+
         md.add_bar("NIFTY", bar);
-        
+
         assert_eq!(md.instruments.len(), 1);
         assert_eq!(md.get_id("NIFTY"), Some(1));
         assert_eq!(md.bars.get(&1).unwrap().len(), 1);

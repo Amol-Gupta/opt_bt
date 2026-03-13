@@ -17,7 +17,7 @@
 /// requiring the source tree to be present.
 fn main() {
     let repo = std::env::var("OPT_BT_RELEASE_REPO").unwrap_or_default();
-    let rev  = std::env::var("OPT_BT_RELEASE_REV").unwrap_or_default();
+    let rev = std::env::var("OPT_BT_RELEASE_REV").unwrap_or_default();
     let root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
 
     if !repo.is_empty() && !rev.is_empty() {

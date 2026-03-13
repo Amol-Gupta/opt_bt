@@ -82,7 +82,12 @@ impl NiftyNearestExpiryStraddleStrategy {
         ids
     }
 
-    fn resolve_atm_legs(&self, ctx: &Context, spot_points: i64, day_key: i64) -> Option<(u32, u32)> {
+    fn resolve_atm_legs(
+        &self,
+        ctx: &Context,
+        spot_points: i64,
+        day_key: i64,
+    ) -> Option<(u32, u32)> {
         let mut best_ce: Option<(u32, i64)> = None;
         let mut best_pe: Option<(u32, i64)> = None;
 
@@ -282,4 +287,3 @@ impl Strategy for NiftyNearestExpiryStraddleStrategy {
         ));
     }
 }
-

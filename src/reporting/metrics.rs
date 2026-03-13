@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use crate::common::types::PRICE_SCALE;
 use crate::portfolio::manager::Account;
 use crate::portfolio::models::{Position, Trade};
-use crate::common::types::PRICE_SCALE;
 
 #[derive(Debug, Clone, Default)]
 pub struct MetricValues {
@@ -37,7 +37,11 @@ pub struct MetricValues {
     pub final_cash_balance: f64,
 }
 
-pub fn calculate_metrics(account: &Account, trades: &[Trade], benchmark_returns: &[f64]) -> MetricValues {
+pub fn calculate_metrics(
+    account: &Account,
+    trades: &[Trade],
+    benchmark_returns: &[f64],
+) -> MetricValues {
     let initial_equity = account.initial_capital as f64;
     let final_equity = account.equity(&HashMap::new()) as f64;
 
@@ -140,13 +144,10 @@ pub fn calculate_metrics(account: &Account, trades: &[Trade], benchmark_returns:
     let (sharpe_ratio, sortino_ratio) = risk_metrics(&returns, periods_per_year, 0.05);
     let annual_variance = annualized_variance(&returns, periods_per_year);
     let annual_standard_deviation = annual_variance.sqrt();
-    let (alpha, beta, information_ratio, tracking_error, treynor_ratio) = benchmark_relative_metrics(
-        &returns,
-        benchmark_returns,
-        periods_per_year,
-        0.05,
-    );
-    let probabilistic_sharpe_ratio_pct = probabilistic_sharpe_ratio_pct(&returns, sharpe_ratio, 0.0);
+    let (alpha, beta, information_ratio, tracking_error, treynor_ratio) =
+        benchmark_relative_metrics(&returns, benchmark_returns, periods_per_year, 0.05);
+    let probabilistic_sharpe_ratio_pct =
+        probabilistic_sharpe_ratio_pct(&returns, sharpe_ratio, 0.0);
 
     let margin_utilization_pct = margin_utilization_pct(account);
     let total_fees_scaled: i64 = trades.iter().map(|t| t.fee).sum();
@@ -258,7 +259,10 @@ fn realized_close_stats(trades: &[Trade]) -> Vec<CloseStat> {
                 let basis_scaled = avg_cost_before.saturating_mul(closed_qty);
                 if basis_scaled > 0 {
                     let pnl_pct = (pnl_scaled as f64 / basis_scaled as f64) * 100.0;
-                    stats.push(CloseStat { pnl_scaled, pnl_pct });
+                    stats.push(CloseStat {
+                        pnl_scaled,
+                        pnl_pct,
+                    });
                 }
             }
         }
@@ -379,7 +383,13 @@ fn benchmark_relative_metrics(
         0.0
     };
 
-    (alpha, beta, information_ratio, tracking_error, treynor_ratio)
+    (
+        alpha,
+        beta,
+        information_ratio,
+        tracking_error,
+        treynor_ratio,
+    )
 }
 
 fn annualized_variance(returns: &[f64], periods_per_year: f64) -> f64 {
@@ -387,7 +397,11 @@ fn annualized_variance(returns: &[f64], periods_per_year: f64) -> f64 {
     variance * periods_per_year.max(1.0)
 }
 
-fn probabilistic_sharpe_ratio_pct(returns: &[f64], sharpe_ratio: f64, benchmark_sharpe: f64) -> f64 {
+fn probabilistic_sharpe_ratio_pct(
+    returns: &[f64],
+    sharpe_ratio: f64,
+    benchmark_sharpe: f64,
+) -> f64 {
     if returns.len() < 2 {
         return 0.0;
     }
@@ -396,7 +410,8 @@ fn probabilistic_sharpe_ratio_pct(returns: &[f64], sharpe_ratio: f64, benchmark_
     let skew = skewness_population(returns);
     let kurt = kurtosis_population(returns);
     let numerator = (sharpe_ratio - benchmark_sharpe) * (n - 1.0).sqrt();
-    let denominator_sq = 1.0 - skew * sharpe_ratio + ((kurt - 1.0) / 4.0) * sharpe_ratio * sharpe_ratio;
+    let denominator_sq =
+        1.0 - skew * sharpe_ratio + ((kurt - 1.0) / 4.0) * sharpe_ratio * sharpe_ratio;
 
     if denominator_sq <= 0.0 {
         return 0.0;
@@ -558,8 +573,7 @@ fn erf_approx(x: f64) -> f64 {
     let x = x.abs();
 
     let t = 1.0 / (1.0 + p * x);
-    let y = 1.0
-        - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) * (-x * x).exp();
+    let y = 1.0 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) * (-x * x).exp();
 
     sign * y
 }

@@ -1,28 +1,24 @@
-use opt_bt::config::{Config, SweepConfig, StrategyConfig};
+use chrono::Local;
+use clap::{Parser, Subcommand};
 use opt_bt::cache::ipc as cache_ipc;
 use opt_bt::cache::snapshot::{
-    load_market_data_snapshot,
-    load_market_data_snapshot_view_with_backend,
+    load_market_data_snapshot, load_market_data_snapshot_view_with_backend,
     validate_shared_snapshot_handle,
 };
+use opt_bt::common::logging;
+use opt_bt::config::{Config, StrategyConfig, SweepConfig};
 use opt_bt::data::view::MarketDataView;
 use opt_bt::engine::runner::Engine;
 use opt_bt::engine::sweep::run_sweep;
+use opt_bt::portfolio::allocator::PortfolioAllocator;
+use opt_bt::reporting::aggregator::AggregatedSummary;
+use opt_bt::reporting::json::generate_report_with_reproducibility;
+use opt_bt::reporting::reproducibility::build_reproducibility;
 use opt_bt::strategy::examples::{
-    AtmStraddleSellStrategy,
-    NiftyNearestExpiryStraddleStrategy,
-    RandomStrategy,
-    SmaNifty50Strategy,
+    AtmStraddleSellStrategy, NiftyNearestExpiryStraddleStrategy, RandomStrategy, SmaNifty50Strategy,
 };
 use opt_bt::strategy::portfolio::PortfolioStrategy;
 use opt_bt::strategy::Strategy;
-use opt_bt::reporting::json::generate_report_with_reproducibility;
-use opt_bt::reporting::aggregator::AggregatedSummary;
-use opt_bt::reporting::reproducibility::build_reproducibility;
-use opt_bt::portfolio::allocator::PortfolioAllocator;
-use opt_bt::common::logging;
-use clap::{Parser, Subcommand};
-use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -37,10 +33,11 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Single backtest run
     Run(Config),
-    
+
     /// Parameter sweep optimization
     Sweep {
         /// Path to sweep configuration JSON file
@@ -107,11 +104,15 @@ fn main() {
             );
             let data_path = resolve_data_path(config.data_dir.as_deref())
                 .unwrap_or_else(|err| panic!("Failed to resolve data path: {err}"));
-            let market_data = load_market_data_view_cache_only(data_path.to_string_lossy().as_ref())
-                .unwrap_or_else(|err| panic!("Failed to load market data from cache: {err}"));
+            let market_data =
+                load_market_data_view_cache_only(data_path.to_string_lossy().as_ref())
+                    .unwrap_or_else(|err| panic!("Failed to load market data from cache: {err}"));
             let strategy = build_portfolio_strategy(&config);
-            let mut engine = Engine::new(strategy, market_data, config.initial_capital * PRICE_SCALE);
-            if let Some(allocator) = build_allocator_from_config(&config, config.initial_capital * PRICE_SCALE) {
+            let mut engine =
+                Engine::new(strategy, market_data, config.initial_capital * PRICE_SCALE);
+            if let Some(allocator) =
+                build_allocator_from_config(&config, config.initial_capital * PRICE_SCALE)
+            {
                 engine.context.set_allocator(allocator);
             }
             engine.init();
@@ -119,12 +120,16 @@ fn main() {
 
             std::env::set_var("BT_BENCHMARK_SYMBOL", &config.benchmark);
 
-            let reproducibility = build_reproducibility(&config, data_path.to_string_lossy().as_ref())
-                .unwrap_or_else(|err| panic!("Failed to build reproducibility metadata: {err}"));
+            let reproducibility =
+                build_reproducibility(&config, data_path.to_string_lossy().as_ref())
+                    .unwrap_or_else(|err| {
+                        panic!("Failed to build reproducibility metadata: {err}")
+                    });
             let report = generate_report_with_reproducibility(&engine, Some(reproducibility));
             let json = serde_json::to_string_pretty(&report).unwrap();
             if let Some(path) = &config.report_path {
-                fs::write(path, &json).unwrap_or_else(|err| panic!("Failed to write report file: {err}"));
+                fs::write(path, &json)
+                    .unwrap_or_else(|err| panic!("Failed to write report file: {err}"));
             }
             println!("{}", json);
         }
@@ -141,19 +146,19 @@ fn main() {
                 .unwrap_or_else(|err| panic!("Failed to resolve data path: {err}"));
             let market_data = load_market_data_cache_only(data_path.to_string_lossy().as_ref())
                 .unwrap_or_else(|err| panic!("Failed to load market data from cache: {err}"));
-            
+
             let results = run_sweep(
                 &sweep_cfg,
                 market_data,
                 data_path.to_string_lossy().as_ref(),
                 |cfg| {
-                (
-                    build_portfolio_strategy(cfg),
-                    build_allocator_from_config(cfg, cfg.initial_capital * PRICE_SCALE),
-                )
+                    (
+                        build_portfolio_strategy(cfg),
+                        build_allocator_from_config(cfg, cfg.initial_capital * PRICE_SCALE),
+                    )
                 },
             );
-            
+
             let summary = AggregatedSummary::compute(&results);
             let json = serde_json::to_string_pretty(&summary).unwrap();
             println!("{}", json);
@@ -166,14 +171,21 @@ fn build_portfolio_strategy(config: &Config) -> PortfolioStrategy {
 
     if let Some(portfolio_cfg) = &config.portfolio {
         for strategy_cfg in &portfolio_cfg.strategies {
-            let strategy = build_child_strategy(strategy_cfg)
-                .unwrap_or_else(|| panic!("unknown strategy kind '{}' for id '{}'", strategy_cfg.kind, strategy_cfg.id));
+            let strategy = build_child_strategy(strategy_cfg).unwrap_or_else(|| {
+                panic!(
+                    "unknown strategy kind '{}' for id '{}'",
+                    strategy_cfg.kind, strategy_cfg.id
+                )
+            });
             portfolio.add_strategy(&strategy_cfg.id, strategy);
         }
         return portfolio;
     }
 
-    let kind = config.strategy.clone().unwrap_or_else(|| "random".to_string());
+    let kind = config
+        .strategy
+        .clone()
+        .unwrap_or_else(|| "random".to_string());
     let id = "default".to_string();
     let spec = StrategyConfig {
         id: id.clone(),
@@ -188,9 +200,10 @@ fn build_portfolio_strategy(config: &Config) -> PortfolioStrategy {
     portfolio
 }
 
-fn load_market_data_cache_only(data_path: &str) -> anyhow::Result<Arc<opt_bt::data::models::MarketData>> {
-    let addr = std::env::var("BT_CACHE_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+fn load_market_data_cache_only(
+    data_path: &str,
+) -> anyhow::Result<Arc<opt_bt::data::models::MarketData>> {
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
     let ensured = cache_ipc::ensure_loaded(&addr, data_path, None)?;
     let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
     validate_shared_snapshot_handle(snapshot_path, &ensured.shared_handle)?;
@@ -204,8 +217,7 @@ fn load_market_data_cache_only(data_path: &str) -> anyhow::Result<Arc<opt_bt::da
 }
 
 fn load_market_data_view_cache_only(data_path: &str) -> anyhow::Result<Arc<dyn MarketDataView>> {
-    let addr = std::env::var("BT_CACHE_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
     let ensured = cache_ipc::ensure_loaded(&addr, data_path, None)?;
     let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
     validate_shared_snapshot_handle(snapshot_path, &ensured.shared_handle)?;
@@ -251,7 +263,10 @@ fn build_child_strategy(spec: &StrategyConfig) -> Option<Box<dyn Strategy + Send
                 .get("qty")
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(1);
-            Some(Box::new(AtmStraddleSellStrategy::new(&index_symbol, quantity)))
+            Some(Box::new(AtmStraddleSellStrategy::new(
+                &index_symbol,
+                quantity,
+            )))
         }
         "nifty_nearest_expiry_straddle" => {
             let index_symbol = spec
@@ -264,7 +279,10 @@ fn build_child_strategy(spec: &StrategyConfig) -> Option<Box<dyn Strategy + Send
                 .get("qty")
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(1);
-            Some(Box::new(NiftyNearestExpiryStraddleStrategy::new(&index_symbol, quantity)))
+            Some(Box::new(NiftyNearestExpiryStraddleStrategy::new(
+                &index_symbol,
+                quantity,
+            )))
         }
         "sma_nifty50" => {
             let index_symbol = spec
@@ -298,7 +316,10 @@ fn build_child_strategy(spec: &StrategyConfig) -> Option<Box<dyn Strategy + Send
     }
 }
 
-fn build_allocator_from_config(config: &Config, total_capital_scaled: i64) -> Option<PortfolioAllocator> {
+fn build_allocator_from_config(
+    config: &Config,
+    total_capital_scaled: i64,
+) -> Option<PortfolioAllocator> {
     let portfolio_cfg = config.portfolio.as_ref()?;
     let mut allocator = PortfolioAllocator::new(total_capital_scaled);
     let mut has_rules = false;
@@ -336,5 +357,8 @@ fn resolve_data_path(configured: Option<&str>) -> Result<PathBuf, String> {
         return Ok(fallback.to_path_buf());
     }
 
-    Err("no data path configured; pass --data-dir <parquet-path> or add sample fixtures".to_string())
+    Err(
+        "no data path configured; pass --data-dir <parquet-path> or add sample fixtures"
+            .to_string(),
+    )
 }

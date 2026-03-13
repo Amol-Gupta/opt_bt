@@ -6,13 +6,37 @@ pub type Price = i64;
 pub type InstrumentId = u32;
 pub const PRICE_SCALE: i64 = 10_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum OptionType {
     Call,
     Put,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum InstrumentKind {
     Spot,
     Future,
@@ -33,7 +57,7 @@ impl Side {
             Side::Sell => Side::Buy,
         }
     }
-    
+
     pub fn sign(&self) -> i32 {
         match self {
             Side::Buy => 1,

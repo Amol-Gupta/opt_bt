@@ -177,7 +177,10 @@ impl<S: Strategy> Engine<S> {
 
     fn on_stop(&mut self) {
         self.strategy.on_stop(&mut self.context);
-        println!("Backtest finished. Final Portfolio Cash: {}", self.context.account.cash);
+        println!(
+            "Backtest finished. Final Portfolio Cash: {}",
+            self.context.account.cash
+        );
     }
 
     fn handle_market_event(&mut self, event: &MarketEvent, stats: &mut EnginePhaseStats) {
@@ -257,7 +260,9 @@ impl<S: Strategy> Engine<S> {
             .into_iter()
             .filter(|timestamp| is_market_hour(*timestamp))
             .filter(|timestamp| {
-                let after_start = start_timestamp.map(|start| *timestamp >= start).unwrap_or(true);
+                let after_start = start_timestamp
+                    .map(|start| *timestamp >= start)
+                    .unwrap_or(true);
                 let before_end = end_timestamp.map(|end| *timestamp <= end).unwrap_or(true);
                 after_start && before_end
             })

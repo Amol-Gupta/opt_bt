@@ -1,9 +1,9 @@
+use crate::common::types::PRICE_SCALE;
+use crate::data::models::{Bar, MarketData};
+use anyhow::{Context, Result};
+use polars::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
-use anyhow::{Result, Context};
-use polars::prelude::*;
-use crate::data::models::{MarketData, Bar};
-use crate::common::types::PRICE_SCALE;
 
 pub struct DataLoader;
 
@@ -22,23 +22,28 @@ impl DataLoader {
             return Err(anyhow::anyhow!("Data file not found: {}", path));
         }
 
-        let df = LazyFrame::scan_parquet(file_path, Default::default())?
-            .collect()?;
+        let df = LazyFrame::scan_parquet(file_path, Default::default())?.collect()?;
 
         let column_names = df.get_column_names();
 
-        let symbol_col = find_column(&column_names, &["ticker", "symbol", "instrument", "tradingsymbol"])
-            .context("Missing symbol/ticker column in parquet")?;
-        let ts_col = find_column(&column_names, &["timestamp", "datetime", "time", "date", "ts"])
-            .context("Missing timestamp column in parquet")?;
-        let open_col = find_column(&column_names, &["open"])
-            .context("Missing open column in parquet")?;
-        let high_col = find_column(&column_names, &["high"])
-            .context("Missing high column in parquet")?;
-        let low_col = find_column(&column_names, &["low"])
-            .context("Missing low column in parquet")?;
-        let close_col = find_column(&column_names, &["close"])
-            .context("Missing close column in parquet")?;
+        let symbol_col = find_column(
+            &column_names,
+            &["ticker", "symbol", "instrument", "tradingsymbol"],
+        )
+        .context("Missing symbol/ticker column in parquet")?;
+        let ts_col = find_column(
+            &column_names,
+            &["timestamp", "datetime", "time", "date", "ts"],
+        )
+        .context("Missing timestamp column in parquet")?;
+        let open_col =
+            find_column(&column_names, &["open"]).context("Missing open column in parquet")?;
+        let high_col =
+            find_column(&column_names, &["high"]).context("Missing high column in parquet")?;
+        let low_col =
+            find_column(&column_names, &["low"]).context("Missing low column in parquet")?;
+        let close_col =
+            find_column(&column_names, &["close"]).context("Missing close column in parquet")?;
         let volume_col = find_column(&column_names, &["volume", "qty", "size"]);
 
         let mut md = MarketData::new();
@@ -90,7 +95,10 @@ impl DataLoader {
 
 fn find_column<'a>(columns: &'a [&str], candidates: &[&str]) -> Option<&'a str> {
     for candidate in candidates {
-        if let Some(found) = columns.iter().find(|name| name.eq_ignore_ascii_case(candidate)) {
+        if let Some(found) = columns
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(candidate))
+        {
             return Some(*found);
         }
     }
@@ -120,7 +128,10 @@ fn anyvalue_to_f64(value: AnyValue<'_>) -> Result<f64> {
         AnyValue::Decimal(v, scale) => Ok((v as f64) / 10f64.powi(scale as i32)),
         AnyValue::String(v) => v.parse::<f64>().context("Cannot parse numeric string"),
         AnyValue::StringOwned(v) => v.parse::<f64>().context("Cannot parse numeric string"),
-        other => other.to_string().parse::<f64>().context("Cannot parse numeric value"),
+        other => other
+            .to_string()
+            .parse::<f64>()
+            .context("Cannot parse numeric value"),
     }
 }
 
@@ -182,7 +193,10 @@ fn parse_string_timestamp(v: &str) -> Result<i64> {
         return Ok(dt.timestamp());
     }
 
-    Err(anyhow::anyhow!("Unsupported timestamp string format: {}", v))
+    Err(anyhow::anyhow!(
+        "Unsupported timestamp string format: {}",
+        v
+    ))
 }
 
 fn to_scaled_price(v: f64) -> i64 {

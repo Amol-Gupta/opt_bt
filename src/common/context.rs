@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use std::collections::{BTreeSet, HashMap};
+use crate::common::event::{Event, FillEvent, OrderEvent};
+use crate::common::types::{InstrumentId, OrderType, Side};
 use crate::data::models::Bar;
 use crate::data::view::MarketDataView;
-use crate::common::types::{InstrumentId, OrderType, Side};
-use crate::common::event::{Event, OrderEvent, FillEvent};
-use crate::portfolio::manager::Account;
 use crate::portfolio::allocator::PortfolioAllocator;
+use crate::portfolio::manager::Account;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SubscriptionDiff {
@@ -31,10 +31,10 @@ pub struct Context {
     // Market Data access (historical or current snapshot)
     // Could track latest prices for all instruments
     pub market_data: Arc<dyn MarketDataView>,
-    
+
     // Current simulation time
     pub current_timestamp: i64,
-    
+
     // Output buffer for generated events (Orders, Logs, etc.)
     // Strategy pushes to this, Engine drains it.
     pub event_buffer: Vec<Event>,
@@ -86,15 +86,15 @@ impl Context {
     pub fn set_allocator(&mut self, allocator: PortfolioAllocator) {
         self.allocator = Some(allocator);
     }
-    
+
     pub fn set_strategy_id(&mut self, id: &str) {
         self.active_strategy_id = id.to_string();
     }
-    
+
     pub fn set_time(&mut self, timestamp: i64) {
         self.current_timestamp = timestamp;
     }
-    
+
     pub fn now(&self) -> i64 {
         self.current_timestamp
     }
@@ -252,14 +252,20 @@ impl Context {
     pub fn desired_subscriptions(&self) -> Vec<InstrumentId> {
         self.desired_subscriptions.iter().copied().collect()
     }
-    
+
     pub fn get_bar(&self, instrument_id: u32) -> Option<Bar> {
         self.market_data
             .get_bar_at_or_before(instrument_id, self.current_timestamp)
     }
 
     /// Place a new order
-    pub fn place_order(&mut self, instrument_id: u32, side: Side, order_type: OrderType, quantity: i64) -> u64 {
+    pub fn place_order(
+        &mut self,
+        instrument_id: u32,
+        side: Side,
+        order_type: OrderType,
+        quantity: i64,
+    ) -> u64 {
         self.place_order_at(
             instrument_id,
             side,
@@ -300,7 +306,8 @@ impl Context {
             }
         }
 
-        let additional_notional = self.estimate_order_notional(instrument_id, &order_type, quantity);
+        let additional_notional =
+            self.estimate_order_notional(instrument_id, &order_type, quantity);
         let current_open_notional = *self
             .strategy_open_notional
             .get(&self.active_strategy_id)
@@ -321,7 +328,7 @@ impl Context {
         }
 
         let order_id = self.generate_order_id();
-        
+
         let price = match order_type {
             OrderType::Limit(p) => p,
             OrderType::Stop(p) => p,
@@ -341,7 +348,8 @@ impl Context {
         if let Event::Order(order_event) = &event {
             self.order_events.push(order_event.clone());
         }
-        self.order_strategy_map.insert(order_id, self.active_strategy_id.clone());
+        self.order_strategy_map
+            .insert(order_id, self.active_strategy_id.clone());
         self.event_buffer.push(event);
         order_id
     }
@@ -365,14 +373,14 @@ impl Context {
             let positions = self
                 .strategy_positions
                 .entry(strategy_id.clone())
-                .or_insert_with(HashMap::new);
+                .or_default();
             let qty = positions.entry(fill.instrument_id).or_insert(0);
             *qty += signed_delta;
         }
 
         self.strategy_mark_prices
             .entry(strategy_id.clone())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(fill.instrument_id, fill.fill_price);
 
         let mut exposure_total: i128 = 0;
@@ -391,28 +399,37 @@ impl Context {
         }
 
         let exposure_total = exposure_total.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
-        self.strategy_open_notional.insert(strategy_id, exposure_total);
+        self.strategy_open_notional
+            .insert(strategy_id, exposure_total);
     }
-    
+
     fn generate_order_id(&self) -> u64 {
         // Simple distinct ID generation
         // In production, use a robust ID generator
         // Using timestamp + buffer len for uniqueness in this scope
         (self.current_timestamp as u64) * 1000 + (self.event_buffer.len() as u64)
     }
-    
+
     pub fn collect_events(&mut self) -> Vec<Event> {
         self.event_buffer.drain(..).collect()
     }
 
-    fn estimate_order_notional(&self, instrument_id: u32, order_type: &OrderType, quantity: i64) -> i64 {
+    fn estimate_order_notional(
+        &self,
+        instrument_id: u32,
+        order_type: &OrderType,
+        quantity: i64,
+    ) -> i64 {
         let price = match order_type {
             OrderType::Limit(price) | OrderType::Stop(price) => *price,
-            OrderType::Market => self.get_bar(instrument_id).map(|bar| bar.close).unwrap_or(0),
+            OrderType::Market => self
+                .get_bar(instrument_id)
+                .map(|bar| bar.close)
+                .unwrap_or(0),
         };
 
-        ((quantity as i128).abs() * (price as i128))
-            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+        ((quantity as i128).abs() * (price as i128)).clamp(i64::MIN as i128, i64::MAX as i128)
+            as i64
     }
 }
 
@@ -421,9 +438,9 @@ mod tests {
     use super::*;
     use crate::common::event::FillEvent;
     use crate::common::types::Status;
-    use crate::portfolio::allocator::PortfolioAllocator;
     use crate::common::types::PRICE_SCALE;
     use crate::data::models::MarketData;
+    use crate::portfolio::allocator::PortfolioAllocator;
 
     #[test]
     fn test_context_place_order() {
@@ -440,13 +457,13 @@ mod tests {
             },
         );
         let md = Arc::new(md);
-        let mut ctx = Context::new(md.clone(), 1_000_000); // 1,000,000 * 10_000 not needed if already scaled, wait. Context::new takes initial_capital. 
-        // We usually pass scaled capital.
-        
+        let mut ctx = Context::new(md.clone(), 1_000_000); // 1,000,000 * 10_000 not needed if already scaled, wait. Context::new takes initial_capital.
+                                                           // We usually pass scaled capital.
+
         ctx.set_time(100);
-        
+
         let order_id = ctx.place_order(1, Side::Buy, OrderType::Limit(1000), 10);
-        
+
         // Assert order generation
         {
             let events = &ctx.event_buffer;
@@ -458,14 +475,14 @@ mod tests {
                     assert_eq!(o.instrument_id, 1);
                     assert_eq!(o.side, Side::Buy);
                     assert_eq!(o.quantity, 10);
-                },
+                }
                 _ => panic!("Expected OrderEvent"),
             }
         }
-        
+
         // Assert account access
         assert_eq!(ctx.account.cash, 1_000_000);
-        
+
         let events = ctx.collect_events();
         assert_eq!(events.len(), 1);
         assert!(ctx.event_buffer.is_empty());
@@ -520,7 +537,10 @@ mod tests {
             strategy_id: "s1".to_string(),
         };
         ctx.on_fill_exposure(&buy_fill);
-        assert_eq!(ctx.strategy_open_notional.get("s1").copied(), Some(200 * PRICE_SCALE));
+        assert_eq!(
+            ctx.strategy_open_notional.get("s1").copied(),
+            Some(200 * PRICE_SCALE)
+        );
 
         let sell_fill = FillEvent {
             timestamp: 101,
@@ -534,7 +554,10 @@ mod tests {
             strategy_id: "s1".to_string(),
         };
         ctx.on_fill_exposure(&sell_fill);
-        assert_eq!(ctx.strategy_open_notional.get("s1").copied(), Some(100 * PRICE_SCALE));
+        assert_eq!(
+            ctx.strategy_open_notional.get("s1").copied(),
+            Some(100 * PRICE_SCALE)
+        );
     }
 
     #[test]
@@ -626,13 +649,19 @@ mod tests {
         ctx.account.on_fill(&buy_fill);
 
         assert_eq!(ctx.position_qty(instrument_id), 2);
-        assert_eq!(ctx.position_avg_cost(instrument_id), Some(100 * PRICE_SCALE));
+        assert_eq!(
+            ctx.position_avg_cost(instrument_id),
+            Some(100 * PRICE_SCALE)
+        );
         assert_eq!(ctx.instrument_realized_pnl(instrument_id), 0);
         assert_eq!(ctx.realized_pnl(), 0);
 
         ctx.set_time(101);
         // Unrealized = 2 * (110 - 100) * PRICE_SCALE
-        assert_eq!(ctx.instrument_unrealized_pnl(instrument_id), 20 * PRICE_SCALE);
+        assert_eq!(
+            ctx.instrument_unrealized_pnl(instrument_id),
+            20 * PRICE_SCALE
+        );
         assert_eq!(ctx.unrealized_pnl(), 20 * PRICE_SCALE);
         assert_eq!(ctx.mtm_pnl(), 20 * PRICE_SCALE);
 
@@ -673,4 +702,3 @@ mod tests {
         assert_eq!(snapshots, vec![snapshot]);
     }
 }
-

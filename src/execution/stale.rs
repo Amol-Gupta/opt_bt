@@ -24,19 +24,19 @@ impl StaleDetector {
         if data_ts > current_ts {
             return DataStatus::Future;
         }
-        
+
         // Assuming timestamps are seconds
         // Be careful with i64 subtraction overflow (unlikely for unix ts)
         let diff = current_ts - data_ts;
-        
+
         if diff < 0 {
-             return DataStatus::Future; // Should be covered above
+            return DataStatus::Future; // Should be covered above
         }
-        
+
         if diff as u64 > self.threshold.as_secs() {
             return DataStatus::Stale;
         }
-        
+
         DataStatus::Fresh
     }
 }

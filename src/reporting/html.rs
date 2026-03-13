@@ -6,7 +6,7 @@ use crate::reporting::json::{BacktestReport, FillRecord};
 pub fn generate_html_report(report: &BacktestReport) -> String {
     let mut fills_rows = String::new();
     for fill in &report.fills {
-      fills_rows.push_str(&render_fill_row(fill));
+        fills_rows.push_str(&render_fill_row(fill));
     }
 
     let mut strategy_rows = String::new();
@@ -110,7 +110,10 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
     )
 }
 
-pub fn write_html_report<P: AsRef<Path>>(report: &BacktestReport, output_path: P) -> std::io::Result<()> {
+pub fn write_html_report<P: AsRef<Path>>(
+    report: &BacktestReport,
+    output_path: P,
+) -> std::io::Result<()> {
     fs::write(output_path, generate_html_report(report))
 }
 
@@ -135,7 +138,7 @@ fn html_escape(input: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-      .replace('\'', "&#39;")
+        .replace('\'', "&#39;")
 }
 
 #[cfg(test)]
@@ -144,8 +147,8 @@ mod tests {
 
     use super::*;
     use crate::reporting::json::{
-        BacktestReport, DatasetMetadata, Metrics, Reproducibility, Simulation, StrategyAttributionRecord,
-      FillRecord,
+        BacktestReport, DatasetMetadata, FillRecord, Metrics, Reproducibility, Simulation,
+        StrategyAttributionRecord,
     };
     use crate::reporting::portfolio::PortfolioView;
     use crate::reporting::post_analysis::{PostAnalysisSummary, TaxSummary};
@@ -160,7 +163,7 @@ mod tests {
                 config: HashMap::new(),
                 dataset: DatasetMetadata {
                     source: "x".to_string(),
-                  sha256: Some("y".to_string()),
+                    sha256: Some("y".to_string()),
                     granularity: "1m".to_string(),
                     start_date: "2024-01-01".to_string(),
                     end_date: "2024-01-02".to_string(),
@@ -173,29 +176,29 @@ mod tests {
                 instrument_count: 1,
             },
             metrics: Metrics {
-              benchmark_symbol: "NIFTY 50".to_string(),
-              benchmark_available: true,
-              total_orders: 2,
-              average_win_pct: 1.0,
-              average_loss_pct: -0.5,
-              compounding_annual_return_pct: 1.2,
-              expectancy: 0.1,
+                benchmark_symbol: "NIFTY 50".to_string(),
+                benchmark_available: true,
+                total_orders: 2,
+                average_win_pct: 1.0,
+                average_loss_pct: -0.5,
+                compounding_annual_return_pct: 1.2,
+                expectancy: 0.1,
                 total_return_pct: 1.5,
                 cagr_pct: 1.2,
-              start_equity: 1000.0,
-              end_equity: 1015.0,
+                start_equity: 1000.0,
+                end_equity: 1015.0,
                 sharpe_ratio: 0.9,
                 sortino_ratio: 1.1,
-              probabilistic_sharpe_ratio_pct: 55.0,
+                probabilistic_sharpe_ratio_pct: 55.0,
                 max_drawdown_pct: -2.3,
                 fill_count: 1,
                 round_trip_trade_count: 1,
                 win_rate_pct: 50.0,
-              loss_rate_pct: 50.0,
-              profit_loss_ratio: 1.0,
+                loss_rate_pct: 50.0,
+                profit_loss_ratio: 1.0,
                 profit_factor: 1.0,
-              annual_standard_deviation: 0.02,
-              annual_variance: 0.0004,
+                annual_standard_deviation: 0.02,
+                annual_variance: 0.0004,
                 alpha: 0.0,
                 beta: 0.0,
                 information_ratio: 0.5,
@@ -204,9 +207,9 @@ mod tests {
                 margin_utilization_pct: 10.0,
                 estimated_strategy_capacity: None,
                 lowest_capacity_asset: None,
-              total_fees: 1.0,
-              portfolio_turnover_pct: 5.0,
-              drawdown_recovery: 3,
+                total_fees: 1.0,
+                portfolio_turnover_pct: 5.0,
+                drawdown_recovery: 3,
                 final_cash_balance: 1000.0,
             },
             post_analysis: PostAnalysisSummary {
@@ -230,14 +233,14 @@ mod tests {
             strategy_attribution: HashMap::<String, StrategyAttributionRecord>::new(),
             fills: vec![FillRecord {
                 id: 1,
-              order_id: 1,
+                order_id: 1,
                 strategy_id: "s1".to_string(),
                 symbol: "NIFTY".to_string(),
                 side: "Buy".to_string(),
-              timestamp: "t1".to_string(),
+                timestamp: "t1".to_string(),
                 qty: 1,
-              price: 100.0,
-              fee: 0.0,
+                price: 100.0,
+                fee: 0.0,
                 stale_fill: false,
             }],
             order_events: vec![],

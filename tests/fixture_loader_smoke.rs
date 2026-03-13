@@ -8,7 +8,10 @@ use opt_bt::strategy::RandomStrategy;
 fn test_load_fixture_parquet_files() {
     let merged = DataLoader::load_parquet("sample_data/merged_data.sample.parquet")
         .expect("failed to load merged fixture parquet");
-    assert!(!merged.instruments.is_empty(), "expected merged fixture instruments");
+    assert!(
+        !merged.instruments.is_empty(),
+        "expected merged fixture instruments"
+    );
 
     let total_bars: usize = merged.bars.values().map(|bars| bars.len()).sum();
     assert!(total_bars > 0, "expected merged fixture bars");
@@ -17,11 +20,17 @@ fn test_load_fixture_parquet_files() {
         .ids
         .values()
         .any(|sym| sym.ends_with("CE") || sym.ends_with("PE"));
-    assert!(has_option_symbol, "expected CE/PE symbols in merged fixture");
+    assert!(
+        has_option_symbol,
+        "expected CE/PE symbols in merged fixture"
+    );
 
     let index = DataLoader::load_parquet("sample_data/niftyIndex2024.sample.parquet")
         .expect("failed to load index fixture parquet");
-    assert!(!index.instruments.is_empty(), "expected index fixture instruments");
+    assert!(
+        !index.instruments.is_empty(),
+        "expected index fixture instruments"
+    );
     assert!(
         index.ids.values().any(|sym| sym.contains("NIFTY")),
         "expected NIFTY symbol in index fixture"
@@ -55,7 +64,10 @@ fn test_nearest_expiry_straddle_trades_on_combined_fixture() {
         .values()
         .filter(|instrument| instrument.option.is_some())
         .count();
-    assert!(option_count > 0, "expected parsed option instruments in combined fixture");
+    assert!(
+        option_count > 0,
+        "expected parsed option instruments in combined fixture"
+    );
 
     let strategy = NiftyNearestExpiryStraddleStrategy::new("NIFTY 50", 1);
     let mut engine = Engine::new(strategy, market_data, 1_000_000 * 10_000);

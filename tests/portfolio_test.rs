@@ -1,12 +1,12 @@
+use opt_bt::common::context::Context;
+use opt_bt::common::event::{Event, FillEvent, MarketEvent, OrderEvent, SignalEvent};
+use opt_bt::common::types::{OrderType, Side, Status};
+use opt_bt::data::models::MarketData;
+use opt_bt::strategy::portfolio::PortfolioStrategy;
+use opt_bt::strategy::Strategy;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::collections::HashMap;
-use opt_bt::common::context::Context;
-use opt_bt::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent, Event};
-use opt_bt::common::types::{Side, Status, OrderType};
-use opt_bt::strategy::Strategy;
-use opt_bt::strategy::portfolio::PortfolioStrategy;
-use opt_bt::data::models::MarketData;
 
 #[derive(Default)]
 struct StrategyState {
@@ -38,9 +38,9 @@ impl Strategy for MockStrategy {
             self.emitted_initial_order = true;
         }
     }
-    
+
     fn on_signal(&mut self, _ctx: &mut Context, _event: &SignalEvent) {}
-    
+
     fn on_fill(&mut self, ctx: &mut Context, event: &FillEvent) {
         if event.strategy_id == self.id || ctx.active_strategy_id == self.id {
             {
@@ -143,7 +143,11 @@ fn test_portfolio_routing() {
     assert_eq!(response_b.strategy_id, "B");
     assert_eq!(response_b.quantity, 200);
 
-    assert!(context.warnings.is_empty(), "unexpected warnings: {:?}", context.warnings);
+    assert!(
+        context.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        context.warnings
+    );
     assert_eq!(a_state.lock().expect("state mutex poisoned").fills_seen, 1);
     assert_eq!(b_state.lock().expect("state mutex poisoned").fills_seen, 1);
 }
@@ -189,10 +193,23 @@ fn test_unroutable_signal_order_fill_generate_warnings() {
     };
     portfolio.on_fill(&mut context, &fill);
 
-    assert_eq!(context.warnings.len(), 3, "expected three unroutable warnings");
-    assert!(context.warnings.iter().any(|w| w.contains("unroutable signal event")));
-    assert!(context.warnings.iter().any(|w| w.contains("unroutable order event")));
-    assert!(context.warnings.iter().any(|w| w.contains("unroutable fill event")));
+    assert_eq!(
+        context.warnings.len(),
+        3,
+        "expected three unroutable warnings"
+    );
+    assert!(context
+        .warnings
+        .iter()
+        .any(|w| w.contains("unroutable signal event")));
+    assert!(context
+        .warnings
+        .iter()
+        .any(|w| w.contains("unroutable order event")));
+    assert!(context
+        .warnings
+        .iter()
+        .any(|w| w.contains("unroutable fill event")));
 }
 
 #[test]
@@ -225,8 +242,15 @@ fn test_fill_fallback_routes_after_order_mapping_and_handles_out_of_order() {
         strategy_id: "missing".to_string(),
     };
     portfolio.on_fill(&mut context, &unknown_fill_before_map);
-    assert!(drain_orders(&mut context).is_empty(), "no routed order expected before map");
-    assert_eq!(context.warnings.len(), 1, "expected unroutable warning before mapping");
+    assert!(
+        drain_orders(&mut context).is_empty(),
+        "no routed order expected before map"
+    );
+    assert_eq!(
+        context.warnings.len(),
+        1,
+        "expected unroutable warning before mapping"
+    );
 
     portfolio.on_order_event(&mut context, &mapped_order);
 
@@ -289,8 +313,14 @@ fn test_portfolio_before_open_after_close_fanout() {
     let mut portfolio = PortfolioStrategy::new();
     let lifecycle = Arc::new(Mutex::new(HashMap::<String, LifecycleState>::new()));
 
-    portfolio.add_strategy("A", Box::new(LifecycleStrategy::new("A", lifecycle.clone())));
-    portfolio.add_strategy("B", Box::new(LifecycleStrategy::new("B", lifecycle.clone())));
+    portfolio.add_strategy(
+        "A",
+        Box::new(LifecycleStrategy::new("A", lifecycle.clone())),
+    );
+    portfolio.add_strategy(
+        "B",
+        Box::new(LifecycleStrategy::new("B", lifecycle.clone())),
+    );
 
     let market_data = Arc::new(MarketData::new());
     let mut context = Context::new(market_data, 100_000);

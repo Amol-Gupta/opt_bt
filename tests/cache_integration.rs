@@ -22,7 +22,10 @@ fn ensure_loaded_reports_cold_then_warm_hit() {
         .ensure_loaded(fixture_path(), None, None)
         .expect("warm ensure should hit");
     assert!(second.cache_hit, "second ensure should be a cache hit");
-    assert_eq!(first.shared_handle.generation, second.shared_handle.generation);
+    assert_eq!(
+        first.shared_handle.generation,
+        second.shared_handle.generation
+    );
 }
 
 #[test]

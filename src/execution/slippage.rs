@@ -43,7 +43,7 @@ mod tests {
     fn test_fixed_slippage() {
         let model = FixedSlippage::new(2, 5); // 2 ticks * 5 = 10 units
         let price = 1000;
-        
+
         assert_eq!(model.calculate_slippage(price, 1, Side::Buy), 1010);
         assert_eq!(model.calculate_slippage(price, 1, Side::Sell), 990);
     }

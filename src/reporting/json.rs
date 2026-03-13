@@ -1,16 +1,14 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use crate::engine::runner::Engine;
-use crate::strategy::Strategy;
 use crate::common::types::{OrderType, PRICE_SCALE};
 use crate::data::view::MarketDataView;
+use crate::engine::runner::Engine;
 use crate::portfolio::manager::StrategyAttribution;
 use crate::reporting::metrics::calculate_metrics;
-use crate::reporting::post_analysis::{
-    run_post_analysis, FlatRateTaxModel, PostAnalysisSummary,
-};
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
+use crate::reporting::post_analysis::{run_post_analysis, FlatRateTaxModel, PostAnalysisSummary};
+use crate::strategy::Strategy;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub const DEFAULT_BENCHMARK_SYMBOL: &str = "NIFTY 50";
 
@@ -219,7 +217,8 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
     let fills = build_fill_records(raw_trades, engine.market_data.as_ref());
     let order_events = build_order_event_records(raw_orders, engine.market_data.as_ref());
     let position_events = build_position_event_records(raw_trades, engine.market_data.as_ref());
-    let strategy_attribution = reconstruct_strategy_attribution(&engine.context.account.strategy_attribution);
+    let strategy_attribution =
+        reconstruct_strategy_attribution(&engine.context.account.strategy_attribution);
     let benchmark_symbol = std::env::var("BT_BENCHMARK_SYMBOL")
         .ok()
         .map(|value| value.trim().to_string())
@@ -363,7 +362,10 @@ fn resolve_benchmark_id(market_data: &dyn MarketDataView, benchmark_symbol: &str
         .map(|(id, _)| id)
 }
 
-fn build_fill_records(raw_trades: &[crate::portfolio::models::Trade], market_data: &dyn MarketDataView) -> Vec<FillRecord> {
+fn build_fill_records(
+    raw_trades: &[crate::portfolio::models::Trade],
+    market_data: &dyn MarketDataView,
+) -> Vec<FillRecord> {
     raw_trades
         .iter()
         .map(|trade| FillRecord {
@@ -396,8 +398,14 @@ fn build_order_event_records(
         .map(|(idx, order)| {
             let (order_type, limit_price) = match order.order_type {
                 OrderType::Market => ("Market".to_string(), None),
-                OrderType::Limit(price) => ("Limit".to_string(), Some((price as f64) / (PRICE_SCALE as f64))),
-                OrderType::Stop(price) => ("Stop".to_string(), Some((price as f64) / (PRICE_SCALE as f64))),
+                OrderType::Limit(price) => (
+                    "Limit".to_string(),
+                    Some((price as f64) / (PRICE_SCALE as f64)),
+                ),
+                OrderType::Stop(price) => (
+                    "Stop".to_string(),
+                    Some((price as f64) / (PRICE_SCALE as f64)),
+                ),
             };
 
             OrderEventRecord {
@@ -427,11 +435,13 @@ fn build_position_event_records(
     market_data: &dyn MarketDataView,
 ) -> Vec<PositionEventRecord> {
     let mut events = Vec::new();
-    let mut positions_by_instrument: HashMap<u32, crate::portfolio::models::Position> = HashMap::new();
+    let mut positions_by_instrument: HashMap<u32, crate::portfolio::models::Position> =
+        HashMap::new();
     let mut event_id: u64 = 1;
 
     for trade in raw_trades {
-        let (open_before, gross_before, flat_before) = portfolio_position_stats(&positions_by_instrument);
+        let (open_before, gross_before, flat_before) =
+            portfolio_position_stats(&positions_by_instrument);
 
         let pos = positions_by_instrument
             .entry(trade.instrument_id)
@@ -447,7 +457,8 @@ fn build_position_event_records(
         let avg_cost_after = pos.avg_cost;
         let realized_after = pos.realized_pnl;
 
-        let (open_after, gross_after, flat_after) = portfolio_position_stats(&positions_by_instrument);
+        let (open_after, gross_after, flat_after) =
+            portfolio_position_stats(&positions_by_instrument);
 
         let mut changed_fields = vec!["instrument_qty".to_string()];
         if avg_cost_after != avg_cost_before {
@@ -502,7 +513,9 @@ fn build_position_event_records(
             instrument_delta_qty: Some(qty_after - qty_before),
             instrument_avg_cost_before: Some((avg_cost_before as f64) / (PRICE_SCALE as f64)),
             instrument_avg_cost_after: Some((avg_cost_after as f64) / (PRICE_SCALE as f64)),
-            realized_pnl_delta: Some(((realized_after - realized_before) as f64) / (PRICE_SCALE as f64)),
+            realized_pnl_delta: Some(
+                ((realized_after - realized_before) as f64) / (PRICE_SCALE as f64),
+            ),
             portfolio_open_instruments_before: open_before,
             portfolio_open_instruments_after: open_after,
             portfolio_gross_qty_before: gross_before,

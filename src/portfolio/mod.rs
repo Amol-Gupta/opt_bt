@@ -1,3 +1,3 @@
-pub mod models;
-pub mod manager;
 pub mod allocator;
+pub mod manager;
+pub mod models;

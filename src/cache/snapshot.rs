@@ -64,10 +64,10 @@ pub fn load_market_data_snapshot(path: &Path) -> Result<Arc<MarketData>> {
 
     match mode.as_str() {
         "read" => load_market_data_snapshot_read(path),
-        "mmap" => load_market_data_snapshot_mmap(path)
-            .or_else(|_| load_market_data_snapshot_read(path)),
-        _ => load_market_data_snapshot_mmap(path)
-            .or_else(|_| load_market_data_snapshot_read(path)),
+        "mmap" => {
+            load_market_data_snapshot_mmap(path).or_else(|_| load_market_data_snapshot_read(path))
+        }
+        _ => load_market_data_snapshot_mmap(path).or_else(|_| load_market_data_snapshot_read(path)),
     }
 }
 
@@ -143,7 +143,10 @@ pub fn build_shared_snapshot_handle(path: &Path, generation: u64) -> Result<Shar
 
 pub fn validate_shared_snapshot_handle(path: &Path, handle: &SharedSnapshotHandle) -> Result<()> {
     if handle.transport != "file_mmap" {
-        anyhow::bail!("unsupported shared snapshot transport: {}", handle.transport);
+        anyhow::bail!(
+            "unsupported shared snapshot transport: {}",
+            handle.transport
+        );
     }
 
     if Path::new(&handle.location) != path {
@@ -222,7 +225,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("opt_bt_snapshot_test_{}_{}.rkyv", std::process::id(), nanos))
+        std::env::temp_dir().join(format!(
+            "opt_bt_snapshot_test_{}_{}.rkyv",
+            std::process::id(),
+            nanos
+        ))
     }
 
     fn write_fixture_snapshot(path: &Path) {

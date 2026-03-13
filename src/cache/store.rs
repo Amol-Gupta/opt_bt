@@ -5,7 +5,9 @@ use std::time::Instant;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::cache::snapshot::{build_shared_snapshot_handle, write_market_data_snapshot, SharedSnapshotHandle};
+use crate::cache::snapshot::{
+    build_shared_snapshot_handle, write_market_data_snapshot, SharedSnapshotHandle,
+};
 use crate::data::fingerprint::{build_dataset_fingerprint, DatasetFingerprint};
 use crate::data::loader::DataLoader;
 use crate::data::models::MarketData;
@@ -65,7 +67,8 @@ impl CacheStore {
         start_ts: Option<i64>,
         end_ts: Option<i64>,
     ) -> Result<EnsureLoadedResult> {
-        let fingerprint = build_dataset_fingerprint(std::path::Path::new(path), self.include_sha256)?;
+        let fingerprint =
+            build_dataset_fingerprint(std::path::Path::new(path), self.include_sha256)?;
         let key = if let (Some(start), Some(end)) = (start_ts, end_ts) {
             format!("{}:{}:{}", fingerprint.key(), start, end)
         } else {

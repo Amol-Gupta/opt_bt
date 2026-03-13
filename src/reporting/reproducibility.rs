@@ -19,7 +19,10 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
     let mut config_map = HashMap::new();
     config_map.insert(
         "data_dir".to_string(),
-        config.data_dir.clone().unwrap_or_else(|| data_path.to_string()),
+        config
+            .data_dir
+            .clone()
+            .unwrap_or_else(|| data_path.to_string()),
     );
     config_map.insert(
         "start_date".to_string(),
@@ -35,7 +38,10 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
             .clone()
             .unwrap_or_else(|| "unknown".to_string()),
     );
-    config_map.insert("initial_capital".to_string(), config.initial_capital.to_string());
+    config_map.insert(
+        "initial_capital".to_string(),
+        config.initial_capital.to_string(),
+    );
     config_map.insert("log_level".to_string(), config.log_level.clone());
 
     let strategy_name = if config.portfolio.is_some() {

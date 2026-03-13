@@ -31,7 +31,13 @@ fn bt_workspace_and_project_init_scaffold() {
     let ws = unique_workspace();
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(
@@ -61,7 +67,9 @@ fn bt_workspace_and_project_init_scaffold() {
     assert!(ws.join("projects/demo/bt.toml").exists());
     assert!(ws.join("projects/demo/strategy/Cargo.toml").exists());
     assert!(ws.join("projects/demo/strategy/src/demo.rs").exists());
-    assert!(ws.join("projects/demo/generated/strategy_registry.rs").exists());
+    assert!(ws
+        .join("projects/demo/generated/strategy_registry.rs")
+        .exists());
 
     let _ = fs::remove_dir_all(ws);
 }
@@ -73,7 +81,13 @@ fn bt_one_command_run_from_scaffold_project() {
     let data = root.join("sample_data/niftyIndex2024.sample.parquet");
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");
@@ -135,7 +149,9 @@ fn bt_one_command_run_from_scaffold_project() {
         .filter_map(Result::ok)
         .collect();
     entries.sort_by_key(|entry| entry.file_name());
-    let latest = entries.last().expect("expected at least one backtest run folder");
+    let latest = entries
+        .last()
+        .expect("expected at least one backtest run folder");
     let run_dir = latest.path();
 
     let report_path = run_dir.join("report.json");
@@ -144,7 +160,10 @@ fn bt_one_command_run_from_scaffold_project() {
     assert!(log_path.exists(), "expected engine.log in run folder");
 
     let report = fs::read_to_string(report_path).expect("failed to read report.json");
-    assert!(report.contains("\"metrics\""), "expected metrics block in report.json");
+    assert!(
+        report.contains("\"metrics\""),
+        "expected metrics block in report.json"
+    );
 
     let _ = fs::remove_dir_all(ws);
 }
@@ -155,7 +174,13 @@ fn bt_list_strategies_discovers_project_strategy() {
     let ws = unique_workspace();
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");
@@ -193,7 +218,10 @@ fn bt_list_strategies_discovers_project_strategy() {
     );
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("demo"), "expected project strategy id in discovery output");
+    assert!(
+        stdout.contains("demo"),
+        "expected project strategy id in discovery output"
+    );
 
     let _ = fs::remove_dir_all(ws);
 }
@@ -205,7 +233,13 @@ fn bt_run_rejects_invalid_typed_param_from_strategy_metadata() {
     let data = root.join("sample_data/niftyIndex2024.sample.parquet");
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");
@@ -315,7 +349,13 @@ fn bt_list_strategies_fails_when_fallback_disabled_and_discovery_unavailable() {
     let ws = unique_workspace();
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");
@@ -377,7 +417,13 @@ fn bt_run_fails_when_discovery_compile_run_fails() {
     let data = root.join("sample_data/niftyIndex2024.sample.parquet");
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");
@@ -436,7 +482,13 @@ fn bt_mixed_mode_projects_stage2_succeeds_and_stage1_discovery_failure_errors() 
     let ws = unique_workspace();
 
     let out = run_bt(
-        &["workspace", "init", "--path", ws.to_string_lossy().as_ref(), "--force"],
+        &[
+            "workspace",
+            "init",
+            "--path",
+            ws.to_string_lossy().as_ref(),
+            "--force",
+        ],
         &root,
     );
     assert!(out.status.success(), "workspace init failed");

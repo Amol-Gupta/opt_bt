@@ -57,7 +57,10 @@ fn canonical_or_original(path: &Path) -> Result<PathBuf> {
             if path.exists() {
                 Ok(path.to_path_buf())
             } else {
-                Err(anyhow::anyhow!("dataset path does not exist: {}", path.display()))
+                Err(anyhow::anyhow!(
+                    "dataset path does not exist: {}",
+                    path.display()
+                ))
             }
         }
     }

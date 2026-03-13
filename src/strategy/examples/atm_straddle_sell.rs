@@ -65,10 +65,8 @@ impl AtmStraddleSellStrategy {
                 if best_ce.map(|(_, d)| distance < d).unwrap_or(true) {
                     best_ce = Some((instrument_id, distance));
                 }
-            } else if symbol.ends_with("PE") {
-                if best_pe.map(|(_, d)| distance < d).unwrap_or(true) {
-                    best_pe = Some((instrument_id, distance));
-                }
+            } else if symbol.ends_with("PE") && best_pe.map(|(_, d)| distance < d).unwrap_or(true) {
+                best_pe = Some((instrument_id, distance));
             }
         }
 

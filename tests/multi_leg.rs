@@ -1,10 +1,10 @@
-use opt_bt::data::models::{MarketData, Bar};
-use opt_bt::engine::runner::Engine;
 use opt_bt::common::context::Context;
-use opt_bt::common::event::{MarketEvent, FillEvent};
-use opt_bt::strategy::Strategy;
+use opt_bt::common::event::{FillEvent, MarketEvent};
 use opt_bt::common::types::{OrderType, Side};
+use opt_bt::data::models::{Bar, MarketData};
+use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
+use opt_bt::strategy::Strategy;
 use std::sync::Arc;
 
 // A simple Straddle Strategy for testing
@@ -37,26 +37,26 @@ impl Strategy for StraddleStrategy {
             return;
         }
 
-        // We need pricing for both to enter a straddle properly (in reality), 
+        // We need pricing for both to enter a straddle properly (in reality),
         // but for this test, we'll just fire market orders for both as soon as we see data for any.
         // Or better: Place orders for both legs.
-        
-        // Check if we have seen data for both? 
+
+        // Check if we have seen data for both?
         // For simplicity, just place orders for both legs immediately on the first event.
         // In a real strategy, we'd wait for quote ticks for both.
-        
+
         // Let's ensure we place orders for known instruments.
         // Since we know the IDs, we can just place orders.
-        // However, the engine processes events sequentially. 
+        // However, the engine processes events sequentially.
         // If we place an order for an instrument that hasn't had a market event yet (no price),
         // the fill model might reject it or it might sit pending until price arrives.
         // The DefaultFillModel needs a bar to fill.
-        
+
         // So let's place orders.
         println!("Placing Straddle Orders");
         ctx.place_order(self.ce_id, Side::Buy, OrderType::Market, self.quantity);
         ctx.place_order(self.pe_id, Side::Buy, OrderType::Market, self.quantity);
-        
+
         self.entered = true;
     }
 
@@ -71,7 +71,7 @@ fn test_multi_leg_straddle() {
     let mut market_data = MarketData::new();
     let symbol_ce = "NIFTY23JAN20000CE";
     let symbol_pe = "NIFTY23JAN20000PE";
-    
+
     // Generate bars for CE
     let mut bars_ce = Vec::new();
     let start_ts = 1672564500; // 09:15:00 UTC
@@ -85,7 +85,7 @@ fn test_multi_leg_straddle() {
             volume: 100,
         });
     }
-    
+
     // Generate bars for PE
     let mut bars_pe = Vec::new();
     for i in 0..10 {
@@ -104,10 +104,10 @@ fn test_multi_leg_straddle() {
     // Since add_bar adds them if not present, let's just add one each first to get IDs
     market_data.add_bar(symbol_ce, bars_ce[0]); // ID 1
     market_data.add_bar(symbol_pe, bars_pe[0]); // ID 2
-    
+
     let ce_id = market_data.get_id(symbol_ce).unwrap();
     let pe_id = market_data.get_id(symbol_pe).unwrap();
-    
+
     // Add rest of bars
     for bar in bars_ce.iter().skip(1) {
         market_data.add_bar(symbol_ce, *bar);
@@ -131,22 +131,25 @@ fn test_multi_leg_straddle() {
 
     // 5. Verify
     let report = generate_report(&engine);
-    
+
     println!("Total Fills: {}", report.metrics.fill_count);
-    
+
     // We expect at least 2 fills (1 Buy CE, 1 Buy PE)
-    assert!(report.metrics.fill_count >= 2, "Expected at least 2 fills (straddle leg buys)");
-    
+    assert!(
+        report.metrics.fill_count >= 2,
+        "Expected at least 2 fills (straddle leg buys)"
+    );
+
     // Verify we have positions in both
     // note: generate_report doesn't expose current positions easily in the struct yet (it's in report.trades mostly)
     // iterate engine context directly
     let positions = &engine.context.account.positions;
     assert!(positions.contains_key(&ce_id), "Missing CE position");
     assert!(positions.contains_key(&pe_id), "Missing PE position");
-    
+
     let pos_ce = positions.get(&ce_id).unwrap();
     let pos_pe = positions.get(&pe_id).unwrap();
-    
+
     assert_eq!(pos_ce.quantity, 1, "CE Quantity mismatch");
     assert_eq!(pos_pe.quantity, 1, "PE Quantity mismatch");
 }

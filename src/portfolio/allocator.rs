@@ -20,7 +20,12 @@ impl PortfolioAllocator {
         }
     }
 
-    pub fn register_strategy(&mut self, strategy_id: &str, capital_limit: i64, max_exposure_ratio: f64) {
+    pub fn register_strategy(
+        &mut self,
+        strategy_id: &str,
+        capital_limit: i64,
+        max_exposure_ratio: f64,
+    ) {
         let ratio = max_exposure_ratio.clamp(0.0, 1.0);
         self.rules.insert(
             strategy_id.to_string(),
@@ -51,7 +56,8 @@ impl PortfolioAllocator {
         }
 
         let max_by_capital = rule.capital_limit;
-        let max_by_exposure = ((rule.capital_limit as f64) * rule.max_exposure_ratio).round() as i64;
+        let max_by_exposure =
+            ((rule.capital_limit as f64) * rule.max_exposure_ratio).round() as i64;
         let limit = max_by_capital.min(max_by_exposure.max(0));
 
         current_open_notional.saturating_add(additional_notional) <= limit

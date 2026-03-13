@@ -95,10 +95,7 @@ pub fn default_stress_scenarios() -> Vec<StressScenario> {
     ]
 }
 
-pub fn run_post_analysis(
-    trades: &[Trade],
-    tax_model: &dyn TaxModel,
-) -> PostAnalysisSummary {
+pub fn run_post_analysis(trades: &[Trade], tax_model: &dyn TaxModel) -> PostAnalysisSummary {
     let tax = apply_tax_model(trades, tax_model);
 
     PostAnalysisSummary { tax }

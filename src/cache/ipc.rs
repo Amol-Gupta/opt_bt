@@ -16,7 +16,9 @@ pub enum CacheRequest {
         start_ts: Option<i64>,
         end_ts: Option<i64>,
     },
-    Evict { path: String },
+    Evict {
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +71,10 @@ pub fn encode_ensure_loaded_ok(result: &EnsureLoadedResult) -> Result<String> {
 
 pub fn encode_evict_ok(removed: bool) -> String {
     let payload = EvictResult { removed };
-    format!("OK {}", serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()))
+    format!(
+        "OK {}",
+        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
+    )
 }
 
 pub fn encode_error(message: &str) -> String {
@@ -108,10 +113,10 @@ pub fn evict(addr: &str, path: &str) -> Result<EvictResult> {
 fn send_command(addr: &str, command: &str, timeout_override_ms: Option<u64>) -> Result<String> {
     let timeout_ms = timeout_override_ms.unwrap_or_else(|| {
         std::env::var("BT_CACHE_TIMEOUT_MS")
-        .ok()
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(1_500)
+            .ok()
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(1_500)
     });
     let retry_count = std::env::var("BT_CACHE_RETRIES")
         .ok()
@@ -129,7 +134,10 @@ fn send_command(addr: &str, command: &str, timeout_override_ms: Option<u64>) -> 
 
         let mut last_error: Option<std::io::Error> = None;
         let mut stream_opt: Option<TcpStream> = None;
-        for socket_addr in addr.to_socket_addrs().with_context(|| format!("invalid cache server address: {addr}"))? {
+        for socket_addr in addr
+            .to_socket_addrs()
+            .with_context(|| format!("invalid cache server address: {addr}"))?
+        {
             match TcpStream::connect_timeout(&socket_addr, timeout) {
                 Ok(stream) => {
                     stream_opt = Some(stream);
@@ -151,7 +159,9 @@ fn send_command(addr: &str, command: &str, timeout_override_ms: Option<u64>) -> 
                     std::thread::sleep(Duration::from_millis(retry_delay_ms));
                     continue;
                 }
-                return Err(anyhow::anyhow!(format!("failed to connect to cache server at {addr}: {detail}")));
+                return Err(anyhow::anyhow!(format!(
+                    "failed to connect to cache server at {addr}: {detail}"
+                )));
             }
         };
 
@@ -167,7 +177,9 @@ fn send_command(addr: &str, command: &str, timeout_override_ms: Option<u64>) -> 
                 std::thread::sleep(Duration::from_millis(retry_delay_ms));
                 continue;
             }
-            return Err(anyhow::anyhow!(format!("cache command write failed for {addr}: {err}")));
+            return Err(anyhow::anyhow!(format!(
+                "cache command write failed for {addr}: {err}"
+            )));
         }
 
         let mut reader = BufReader::new(stream);
@@ -189,7 +201,9 @@ fn send_command(addr: &str, command: &str, timeout_override_ms: Option<u64>) -> 
                     std::thread::sleep(Duration::from_millis(retry_delay_ms));
                     continue;
                 }
-                return Err(anyhow::anyhow!(format!("cache command read failed for {addr}: {err}")));
+                return Err(anyhow::anyhow!(format!(
+                    "cache command read failed for {addr}: {err}"
+                )));
             }
         }
     }

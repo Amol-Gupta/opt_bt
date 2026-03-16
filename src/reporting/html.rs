@@ -4,6 +4,10 @@ use std::path::Path;
 use crate::reporting::json::{BacktestReport, FillRecord};
 
 pub fn generate_html_report(report: &BacktestReport) -> String {
+  let starting_capital = report.metrics.start_equity;
+  let profit_abs = report.metrics.end_equity - report.metrics.start_equity;
+  let max_drawdown_abs = report.metrics.start_equity * (report.metrics.max_drawdown_pct / 100.0);
+
     let mut fills_rows = String::new();
     for fill in &report.fills {
         fills_rows.push_str(&render_fill_row(fill));
@@ -54,9 +58,10 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
   <div class="section">
     <h2>Summary Metrics</h2>
     <div class="grid">
-      <div class="card"><div class="label">Total Return</div><div class="value">{:.2}%</div></div>
+      <div class="card"><div class="label">Starting Capital</div><div class="value">{}</div></div>
+      <div class="card"><div class="label">Profit</div><div class="value">{} ({:.2}%)</div></div>
+      <div class="card"><div class="label">Max Drawdown</div><div class="value">{} ({:.2}%)</div></div>
       <div class="card"><div class="label">CAGR</div><div class="value">{:.2}%</div></div>
-      <div class="card"><div class="label">Max Drawdown</div><div class="value">{:.2}%</div></div>
       <div class="card"><div class="label">Sharpe</div><div class="value">{:.2}</div></div>
       <div class="card"><div class="label">Sortino</div><div class="value">{:.2}</div></div>
       <div class="card"><div class="label">Fill Count</div><div class="value">{}</div></div>
@@ -95,9 +100,12 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
 </body>
 </html>
 "#,
-        report.metrics.total_return_pct,
+  format_inr(starting_capital),
+  format_inr(profit_abs),
+  report.metrics.total_return_pct,
+  format_inr(max_drawdown_abs),
+  report.metrics.max_drawdown_pct,
         report.metrics.cagr_pct,
-        report.metrics.max_drawdown_pct,
         report.metrics.sharpe_ratio,
         report.metrics.sortino_ratio,
         report.metrics.fill_count,
@@ -140,6 +148,14 @@ fn html_escape(input: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
 }
+
+    fn format_inr(value: f64) -> String {
+      if value.is_sign_negative() {
+        format!("-₹{:.2}", value.abs())
+      } else {
+        format!("₹{:.2}", value)
+      }
+    }
 
 #[cfg(test)]
 mod tests {
@@ -255,7 +271,12 @@ mod tests {
         assert!(html.contains("Backtest Report"));
         assert!(html.contains("Summary Metrics"));
         assert!(html.contains("Portfolio View"));
-        assert!(html.contains("Trades"));
+      assert!(html.contains("Fills"));
+      assert!(html.contains("Starting Capital"));
+      assert!(html.contains("Profit"));
+      assert!(html.contains("₹1000.00"));
+      assert!(html.contains("₹15.00 (1.50%)"));
+      assert!(html.contains("-₹23.00 (-2.30%)"));
     }
 
     #[test]

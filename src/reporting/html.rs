@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::reporting::json::{BacktestReport, FillRecord};
+use serde_json::to_string as to_json_string;
 
 pub fn generate_html_report(report: &BacktestReport) -> String {
     let starting_capital = report.metrics.start_equity;
@@ -32,18 +33,33 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
     }
 
     let strategy_params_rows = render_strategy_params_rows(report);
+    let equity_dates: Vec<String> = report
+      .daily_equity_curve
+      .iter()
+      .map(|point| point.date.clone())
+      .collect();
     let equity_values: Vec<f64> = report
       .daily_equity_curve
       .iter()
       .map(|point| point.equity)
+      .collect();
+    let drawdown_dates: Vec<String> = report
+      .daily_drawdown_curve
+      .iter()
+      .map(|point| point.date.clone())
       .collect();
     let drawdown_values: Vec<f64> = report
       .daily_drawdown_curve
       .iter()
       .map(|point| point.drawdown_pct)
       .collect();
-    let equity_chart = render_svg_line_chart(&equity_values, "#2d7ef7");
-    let drawdown_chart = render_svg_line_chart(&drawdown_values, "#d64545");
+    let has_curve_data = !equity_values.is_empty() || !drawdown_values.is_empty();
+    let equity_dates_json = to_json_string(&equity_dates).unwrap_or_else(|_| "[]".to_string());
+    let equity_values_json = to_json_string(&equity_values).unwrap_or_else(|_| "[]".to_string());
+    let drawdown_dates_json =
+      to_json_string(&drawdown_dates).unwrap_or_else(|_| "[]".to_string());
+    let drawdown_values_json =
+      to_json_string(&drawdown_values).unwrap_or_else(|_| "[]".to_string());
     let start_day = report
       .daily_equity_curve
       .first()
@@ -56,7 +72,7 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
       .unwrap_or_else(|| "N/A".to_string());
 
     format!(
-        r#"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -76,8 +92,9 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
     th {{ background: #f7f7f7; }}
     ul {{ margin: 8px 0 0 20px; }}
     .chart {{ border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #fff; }}
-    .chart svg {{ width: 100%; height: 220px; display: block; }}
+    #curves-plot {{ width: 100%; height: 560px; }}
   </style>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
   <h1>Backtest Report</h1>
@@ -121,15 +138,12 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
   </div>
 
   <div class="section">
-    <h2>Daily Equity Curve</h2>
-    <div class="chart">{}</div>
-    <div class="muted">Range: {} to {} | Points: {}</div>
-  </div>
-
-  <div class="section">
-    <h2>Drawdown Curve (Daily)</h2>
-    <div class="chart">{}</div>
-    <div class="muted">Range: {} to {} | Points: {}</div>
+    <h2>Interactive Equity & Drawdown Curves</h2>
+    <div class="chart">
+      <div id="curves-plot"></div>
+    </div>
+    <div class="muted">Use mouse drag/wheel to zoom and pan. X axis is synchronized for both plots. Vertical cursor shows values from both plots.</div>
+    <div class="muted">Range: {} to {} | Equity points: {} | Drawdown points: {}</div>
   </div>
 
   <div class="section">
@@ -146,9 +160,100 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
     <h2>Warnings</h2>
     <ul>{}</ul>
   </div>
+
+  <script>
+    (() => {{
+      const hasCurveData = {has_curve_data};
+      if (!hasCurveData || typeof Plotly === "undefined") {{
+        const plotDiv = document.getElementById("curves-plot");
+        if (plotDiv) {{
+          plotDiv.innerHTML = '<div class="muted">Interactive plot unavailable: no daily curve data or Plotly failed to load.</div>';
+        }}
+        return;
+      }}
+
+      const equityDates = {equity_dates_json};
+      const equityValues = {equity_values_json};
+      const drawdownDates = {drawdown_dates_json};
+      const drawdownValues = {drawdown_values_json};
+
+      const equityTrace = {{
+        type: "scatter",
+        mode: "lines",
+        name: "Equity (₹)",
+        x: equityDates,
+        y: equityValues,
+        line: {{ color: "#2d7ef7", width: 2 }},
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "Date: %{{x}}<br>Equity: ₹%{{y:,.2f}}<extra></extra>",
+      }};
+
+      const drawdownTrace = {{
+        type: "scatter",
+        mode: "lines",
+        name: "Drawdown (%)",
+        x: drawdownDates,
+        y: drawdownValues,
+        line: {{ color: "#d64545", width: 2 }},
+        xaxis: "x2",
+        yaxis: "y2",
+        hovertemplate: "Date: %{{x}}<br>Drawdown: %{{y:.2f}}%<extra></extra>",
+      }};
+
+      const layout = {{
+        grid: {{ rows: 2, columns: 1, pattern: "independent", roworder: "top to bottom" }},
+        margin: {{ l: 70, r: 24, t: 20, b: 56 }},
+        legend: {{ orientation: "h", y: 1.08 }},
+        hovermode: "x unified",
+        xaxis: {{
+          title: "Date",
+          type: "date",
+          showgrid: true,
+          tickformat: "%Y-%m-%d",
+          showspikes: true,
+          spikemode: "across",
+          spikesnap: "cursor",
+          spikethickness: 1,
+          spikecolor: "#666"
+        }},
+        yaxis: {{
+          title: "Equity (₹)",
+          showgrid: true,
+          tickformat: ",.2f"
+        }},
+        xaxis2: {{
+          title: "Date",
+          type: "date",
+          matches: "x",
+          showgrid: true,
+          tickformat: "%Y-%m-%d",
+          showspikes: true,
+          spikemode: "across",
+          spikesnap: "cursor",
+          spikethickness: 1,
+          spikecolor: "#666"
+        }},
+        yaxis2: {{
+          title: "Drawdown (%)",
+          showgrid: true,
+          ticksuffix: "%",
+          tickformat: ".2f"
+        }}
+      }};
+
+      const config = {{
+        responsive: true,
+        displaylogo: false,
+        scrollZoom: true
+      }};
+
+      Plotly.newPlot("curves-plot", [equityTrace, drawdownTrace], layout, config);
+    }})();
+  </script>
 </body>
 </html>
-"#,
+"##,
         format_inr(starting_capital),
         format_inr(profit_abs),
         report.metrics.total_return_pct,
@@ -163,16 +268,17 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
         report.portfolio.total_fees_paid,
         strategy_rows,
         strategy_params_rows,
-        equity_chart,
         html_escape(&start_day),
         html_escape(&end_day),
         equity_values.len(),
-        drawdown_chart,
-        html_escape(&start_day),
-        html_escape(&end_day),
         drawdown_values.len(),
         fills_rows,
         warning_items,
+        has_curve_data = has_curve_data,
+        equity_dates_json = equity_dates_json,
+        equity_values_json = equity_values_json,
+        drawdown_dates_json = drawdown_dates_json,
+        drawdown_values_json = drawdown_values_json,
     )
 }
 
@@ -249,50 +355,6 @@ fn html_escape(input: &str) -> String {
       }
 
       rows
-    }
-
-    fn render_svg_line_chart(values: &[f64], stroke: &str) -> String {
-      if values.is_empty() {
-        return "<div class=\"muted\">No daily data available</div>".to_string();
-      }
-
-      let width = 900.0;
-      let height = 220.0;
-      let padding = 16.0;
-
-      let min_value = values
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, |acc, v| acc.min(v));
-      let max_value = values
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, |acc, v| acc.max(v));
-      let value_range = (max_value - min_value).max(1e-9);
-
-      let points = values
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-          let x = if values.len() <= 1 {
-            width / 2.0
-          } else {
-            padding + (index as f64 / (values.len() as f64 - 1.0)) * (width - 2.0 * padding)
-          };
-          let normalized = (value - min_value) / value_range;
-          let y = height - padding - normalized * (height - 2.0 * padding);
-          format!("{:.2},{:.2}", x, y)
-        })
-        .collect::<Vec<String>>()
-        .join(" ");
-
-      format!(
-        "<svg viewBox=\"0 0 {:.0} {:.0}\" preserveAspectRatio=\"none\"><polyline fill=\"none\" stroke=\"{}\" stroke-width=\"2\" points=\"{}\"/></svg>",
-        width,
-        height,
-        html_escape(stroke),
-        points
-      )
     }
 
     fn format_inr(value: f64) -> String {
@@ -438,8 +500,12 @@ mod tests {
         assert!(html.contains("-₹23.00 (-2.30%)"));
         assert!(html.contains("Strategy Parameters"));
         assert!(html.contains("qty=65"));
-        assert!(html.contains("Daily Equity Curve"));
-        assert!(html.contains("Drawdown Curve (Daily)"));
+        assert!(html.contains("Interactive Equity & Drawdown Curves"));
+        assert!(html.contains("Plotly.newPlot"));
+        assert!(html.contains("hovermode: \"x unified\""));
+        assert!(html.contains("matches: \"x\""));
+        assert!(html.contains("Equity (₹)"));
+        assert!(html.contains("Drawdown (%)"));
     }
 
     #[test]

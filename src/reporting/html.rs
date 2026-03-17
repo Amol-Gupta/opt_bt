@@ -34,42 +34,41 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
 
     let strategy_params_rows = render_strategy_params_rows(report);
     let equity_dates: Vec<String> = report
-      .daily_equity_curve
-      .iter()
-      .map(|point| point.date.clone())
-      .collect();
+        .daily_equity_curve
+        .iter()
+        .map(|point| point.date.clone())
+        .collect();
     let equity_values: Vec<f64> = report
-      .daily_equity_curve
-      .iter()
-      .map(|point| point.equity)
-      .collect();
+        .daily_equity_curve
+        .iter()
+        .map(|point| point.equity)
+        .collect();
     let drawdown_dates: Vec<String> = report
-      .daily_drawdown_curve
-      .iter()
-      .map(|point| point.date.clone())
-      .collect();
+        .daily_drawdown_curve
+        .iter()
+        .map(|point| point.date.clone())
+        .collect();
     let drawdown_values: Vec<f64> = report
-      .daily_drawdown_curve
-      .iter()
-      .map(|point| point.drawdown_pct)
-      .collect();
+        .daily_drawdown_curve
+        .iter()
+        .map(|point| point.drawdown_pct)
+        .collect();
     let has_curve_data = !equity_values.is_empty() || !drawdown_values.is_empty();
     let equity_dates_json = to_json_string(&equity_dates).unwrap_or_else(|_| "[]".to_string());
     let equity_values_json = to_json_string(&equity_values).unwrap_or_else(|_| "[]".to_string());
-    let drawdown_dates_json =
-      to_json_string(&drawdown_dates).unwrap_or_else(|_| "[]".to_string());
+    let drawdown_dates_json = to_json_string(&drawdown_dates).unwrap_or_else(|_| "[]".to_string());
     let drawdown_values_json =
-      to_json_string(&drawdown_values).unwrap_or_else(|_| "[]".to_string());
+        to_json_string(&drawdown_values).unwrap_or_else(|_| "[]".to_string());
     let start_day = report
-      .daily_equity_curve
-      .first()
-      .map(|point| point.date.clone())
-      .unwrap_or_else(|| "N/A".to_string());
+        .daily_equity_curve
+        .first()
+        .map(|point| point.date.clone())
+        .unwrap_or_else(|| "N/A".to_string());
     let end_day = report
-      .daily_equity_curve
-      .last()
-      .map(|point| point.date.clone())
-      .unwrap_or_else(|| "N/A".to_string());
+        .daily_equity_curve
+        .last()
+        .map(|point| point.date.clone())
+        .unwrap_or_else(|| "N/A".to_string());
 
     format!(
         r##"<!DOCTYPE html>
@@ -313,57 +312,57 @@ fn html_escape(input: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-    fn render_strategy_params_rows(report: &BacktestReport) -> String {
-      let mut strategy_parameters = report.reproducibility.strategy_parameters.clone();
-      if strategy_parameters.is_empty() {
+fn render_strategy_params_rows(report: &BacktestReport) -> String {
+    let mut strategy_parameters = report.reproducibility.strategy_parameters.clone();
+    if strategy_parameters.is_empty() {
         strategy_parameters.insert(
-          report.reproducibility.strategy_name.clone(),
-          report.reproducibility.parameters.clone(),
+            report.reproducibility.strategy_name.clone(),
+            report.reproducibility.parameters.clone(),
         );
-      }
+    }
 
-      let mut strategy_ids: Vec<String> = strategy_parameters.keys().cloned().collect();
-      strategy_ids.sort();
+    let mut strategy_ids: Vec<String> = strategy_parameters.keys().cloned().collect();
+    strategy_ids.sort();
 
-      let mut rows = String::new();
-      for strategy_id in strategy_ids {
+    let mut rows = String::new();
+    for strategy_id in strategy_ids {
         let params = strategy_parameters
-          .get(&strategy_id)
-          .cloned()
-          .unwrap_or_default();
+            .get(&strategy_id)
+            .cloned()
+            .unwrap_or_default();
         let mut keys: Vec<String> = params.keys().cloned().collect();
         keys.sort();
         let params_text = if keys.is_empty() {
-          "(none)".to_string()
+            "(none)".to_string()
         } else {
-          keys.iter()
-            .map(|key| {
-              format!(
-                "{}={}",
-                html_escape(key),
-                html_escape(params.get(key).unwrap_or(&String::new()))
-              )
-            })
-            .collect::<Vec<String>>()
-            .join(", ")
+            keys.iter()
+                .map(|key| {
+                    format!(
+                        "{}={}",
+                        html_escape(key),
+                        html_escape(params.get(key).unwrap_or(&String::new()))
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join(", ")
         };
         rows.push_str(&format!(
-          "<tr><td>{}</td><td>{}</td></tr>",
-          html_escape(&strategy_id),
-          params_text,
+            "<tr><td>{}</td><td>{}</td></tr>",
+            html_escape(&strategy_id),
+            params_text,
         ));
-      }
-
-      rows
     }
 
-    fn format_inr(value: f64) -> String {
-      if value.is_sign_negative() {
+    rows
+}
+
+fn format_inr(value: f64) -> String {
+    if value.is_sign_negative() {
         format!("-₹{:.2}", value.abs())
-      } else {
+    } else {
         format!("₹{:.2}", value)
-      }
     }
+}
 
 #[cfg(test)]
 mod tests {
@@ -371,8 +370,8 @@ mod tests {
 
     use super::*;
     use crate::reporting::json::{
-      BacktestReport, DailyDrawdownPoint, DailyEquityPoint, DatasetMetadata, FillRecord,
-      Metrics, Reproducibility, Simulation, StrategyAttributionRecord,
+        BacktestReport, DailyDrawdownPoint, DailyEquityPoint, DatasetMetadata, FillRecord, Metrics,
+        Reproducibility, Simulation, StrategyAttributionRecord,
     };
     use crate::reporting::portfolio::PortfolioView;
     use crate::reporting::post_analysis::{PostAnalysisSummary, TaxSummary};
@@ -384,10 +383,10 @@ mod tests {
                 strategy_version: "s0".to_string(),
                 strategy_name: "demo".to_string(),
                 parameters: HashMap::new(),
-              strategy_parameters: HashMap::from([(
-                "demo".to_string(),
-                HashMap::from([("qty".to_string(), "65".to_string())]),
-              )]),
+                strategy_parameters: HashMap::from([(
+                    "demo".to_string(),
+                    HashMap::from([("qty".to_string(), "65".to_string())]),
+                )]),
                 config: HashMap::new(),
                 dataset: DatasetMetadata {
                     source: "x".to_string(),
@@ -474,13 +473,13 @@ mod tests {
             order_events: vec![],
             position_events: vec![],
             daily_equity_curve: vec![DailyEquityPoint {
-              date: "2024-01-01".to_string(),
-              equity: 1000.0,
+                date: "2024-01-01".to_string(),
+                equity: 1000.0,
             }],
             daily_drawdown_curve: vec![DailyDrawdownPoint {
-              date: "2024-01-01".to_string(),
-              drawdown_pct: -1.0,
-              drawdown_abs: -10.0,
+                date: "2024-01-01".to_string(),
+                drawdown_pct: -1.0,
+                drawdown_abs: -10.0,
             }],
             warnings: vec!["ok".to_string()],
         }

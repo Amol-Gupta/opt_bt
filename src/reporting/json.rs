@@ -1,8 +1,8 @@
 use crate::common::types::{OrderType, PRICE_SCALE};
 use crate::data::view::MarketDataView;
 use crate::engine::runner::Engine;
-use crate::portfolio::models::Position;
 use crate::portfolio::manager::StrategyAttribution;
+use crate::portfolio::models::Position;
 use crate::reporting::metrics::calculate_metrics;
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
 use crate::reporting::post_analysis::{run_post_analysis, FlatRateTaxModel, PostAnalysisSummary};
@@ -384,7 +384,9 @@ fn build_daily_curves(
     let mut drawdown_curve = Vec::new();
 
     for (day, day_timestamp) in last_timestamp_by_day {
-        while trade_index < sorted_trades.len() && sorted_trades[trade_index].timestamp <= day_timestamp {
+        while trade_index < sorted_trades.len()
+            && sorted_trades[trade_index].timestamp <= day_timestamp
+        {
             let trade = &sorted_trades[trade_index];
             let cost = (trade.quantity as i128 * trade.price as i128) as i64;
             match trade.side {

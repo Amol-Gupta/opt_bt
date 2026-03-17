@@ -1351,7 +1351,7 @@ fn main() {{
         .unwrap_or_else(|| panic!("Unknown project strategy id: {{}}", strategy_id));
 
     let mut portfolio = PortfolioStrategy::new();
-    portfolio.add_strategy("default", strategy);
+    portfolio.add_strategy(&strategy_id, strategy);
 
     let mut engine = Engine::new(portfolio, market_data, initial_capital * PRICE_SCALE);
     engine.set_date_bounds(start_ts, end_ts);

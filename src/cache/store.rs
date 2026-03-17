@@ -49,8 +49,6 @@ pub struct CacheStatus {
 struct CachedDataset {
     entry: CacheEntry,
     shared_handle: SharedSnapshotHandle,
-    #[allow(dead_code)]
-    market_data: Arc<MarketData>,
 }
 
 #[derive(Debug, Default)]
@@ -101,6 +99,12 @@ impl CacheStore {
         )
     }
 
+    pub fn reserve_generation(&mut self) -> u64 {
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.saturating_add(1);
+        generation
+    }
+
     pub fn include_sha256(&self) -> bool {
         self.include_sha256
     }
@@ -134,8 +138,7 @@ impl CacheStore {
             .sum::<usize>();
 
         let snapshot_path = write_market_data_snapshot(&key, market_data.as_ref())?;
-        let generation = self.next_generation;
-        self.next_generation = self.next_generation.saturating_add(1);
+        let generation = self.reserve_generation();
         let shared_handle = build_shared_snapshot_handle(&snapshot_path, generation)?;
 
         let entry = CacheEntry {
@@ -151,12 +154,25 @@ impl CacheStore {
             snapshot_path: snapshot_path.to_string_lossy().to_string(),
         };
 
+        self.insert_prepared_entry(key, entry, shared_handle, load_ms)
+    }
+
+    pub fn insert_prepared_entry(
+        &mut self,
+        key: String,
+        entry: CacheEntry,
+        shared_handle: SharedSnapshotHandle,
+        load_ms: u128,
+    ) -> Result<EnsureLoadedResult> {
+        if let Some(existing) = self.lookup_by_key(&key) {
+            return Ok(existing);
+        }
+
         self.entries.insert(
             key,
             CachedDataset {
                 entry: entry.clone(),
                 shared_handle: shared_handle.clone(),
-                market_data,
             },
         );
 

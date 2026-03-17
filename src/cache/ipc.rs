@@ -90,7 +90,7 @@ pub fn ensure_loaded(
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(120_000);
+        .unwrap_or(600_000); // 10 min default: large parquet loads can easily exceed 2 min
     let command = if let Some((start_ts, end_ts)) = range {
         format!("ENSURE {} {} {}", path, start_ts, end_ts)
     } else {

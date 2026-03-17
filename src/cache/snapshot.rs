@@ -27,6 +27,13 @@ pub struct SharedSnapshotHandle {
     pub checksum24: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotMetadata {
+    pub loaded_at_unix_secs: u64,
+    pub instrument_count: usize,
+    pub bar_count: usize,
+}
+
 fn snapshot_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("BT_CACHE_SNAPSHOT_DIR") {
         return PathBuf::from(dir);
@@ -126,9 +133,13 @@ pub fn load_market_data_snapshot_view_with_backend(path: &Path) -> Result<Loaded
 }
 
 pub fn build_shared_snapshot_handle(path: &Path, generation: u64) -> Result<SharedSnapshotHandle> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("failed to open snapshot file {}", path.display()))?;
-    let digest = Sha256::digest(&bytes);
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("failed to stat snapshot file {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    hasher.update(metadata.len().to_le_bytes());
+    hasher.update(generation.to_le_bytes());
+    let digest = hasher.finalize();
     let checksum24 = ((digest[0] as u32) << 16) | ((digest[1] as u32) << 8) | digest[2] as u32;
 
     Ok(SharedSnapshotHandle {
@@ -136,7 +147,7 @@ pub fn build_shared_snapshot_handle(path: &Path, generation: u64) -> Result<Shar
         location: path.to_string_lossy().to_string(),
         format: "rkyv_market_data_v1".to_string(),
         generation,
-        byte_len: bytes.len() as u64,
+        byte_len: metadata.len(),
         checksum24,
     })
 }
@@ -214,6 +225,47 @@ pub fn snapshot_path_for_key(cache_key: &str) -> PathBuf {
     hasher.update(cache_key.as_bytes());
     let hash = format!("{:x}", hasher.finalize());
     snapshot_dir().join(format!("{hash}.rkyv"))
+}
+
+fn snapshot_metadata_path(snapshot_path: &Path) -> PathBuf {
+    let mut value = snapshot_path.as_os_str().to_os_string();
+    value.push(".meta.json");
+    PathBuf::from(value)
+}
+
+pub fn write_snapshot_metadata(snapshot_path: &Path, metadata: &SnapshotMetadata) -> Result<()> {
+    let metadata_path = snapshot_metadata_path(snapshot_path);
+    if let Some(parent) = metadata_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let payload = serde_json::to_vec_pretty(metadata)?;
+    std::fs::write(&metadata_path, payload).with_context(|| {
+        format!(
+            "failed to write snapshot metadata {}",
+            metadata_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub fn read_snapshot_metadata(snapshot_path: &Path) -> Result<Option<SnapshotMetadata>> {
+    let metadata_path = snapshot_metadata_path(snapshot_path);
+    if !metadata_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read(&metadata_path).with_context(|| {
+        format!(
+            "failed to read snapshot metadata {}",
+            metadata_path.display()
+        )
+    })?;
+    let parsed = serde_json::from_slice::<SnapshotMetadata>(&raw).with_context(|| {
+        format!(
+            "failed to parse snapshot metadata {}",
+            metadata_path.display()
+        )
+    })?;
+    Ok(Some(parsed))
 }
 
 #[cfg(test)]

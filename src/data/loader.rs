@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use polars::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct DataLoader;
 
@@ -17,12 +18,30 @@ impl DataLoader {
     }
 
     fn load_parquet_impl(path: &str, range: Option<(i64, i64)>) -> Result<Arc<MarketData>> {
+        let progress = loader_progress_settings();
+        let started = Instant::now();
         let file_path = Path::new(path);
         if !file_path.exists() {
             return Err(anyhow::anyhow!("Data file not found: {}", path));
         }
 
+        if progress.enabled {
+            eprintln!(
+                "bt cache-loader start path={} range={}",
+                path,
+                format_range(range)
+            );
+        }
+
         let df = LazyFrame::scan_parquet(file_path, Default::default())?.collect()?;
+        if progress.enabled {
+            eprintln!(
+                "bt cache-loader parquet collected path={} rows={} elapsed_ms={}",
+                path,
+                df.height(),
+                started.elapsed().as_millis()
+            );
+        }
 
         let column_names = df.get_column_names();
 
@@ -46,14 +65,27 @@ impl DataLoader {
             find_column(&column_names, &["close"]).context("Missing close column in parquet")?;
         let volume_col = find_column(&column_names, &["volume", "qty", "size"]);
 
+        let symbol_series = df.column(symbol_col)?;
+        let ts_series = df.column(ts_col)?;
+        let open_series = df.column(open_col)?;
+        let high_series = df.column(high_col)?;
+        let low_series = df.column(low_col)?;
+        let close_series = df.column(close_col)?;
+        let volume_series = if let Some(vol_name) = volume_col {
+            Some(df.column(vol_name)?)
+        } else {
+            None
+        };
+
         let mut md = MarketData::new();
         let height = df.height();
+        let mut loaded_rows = 0usize;
 
         for row_idx in 0..height {
-            let symbol_val = df.column(symbol_col)?.get(row_idx)?;
+            let symbol_val = symbol_series.get(row_idx)?;
             let symbol = anyvalue_to_symbol(symbol_val)?;
 
-            let ts_val = df.column(ts_col)?.get(row_idx)?;
+            let ts_val = ts_series.get(row_idx)?;
             let timestamp = anyvalue_to_epoch_seconds(ts_val)?;
             if let Some((start_ts, end_ts)) = range {
                 if timestamp < start_ts || timestamp > end_ts {
@@ -61,13 +93,13 @@ impl DataLoader {
                 }
             }
 
-            let open_val = df.column(open_col)?.get(row_idx)?;
-            let high_val = df.column(high_col)?.get(row_idx)?;
-            let low_val = df.column(low_col)?.get(row_idx)?;
-            let close_val = df.column(close_col)?.get(row_idx)?;
+            let open_val = open_series.get(row_idx)?;
+            let high_val = high_series.get(row_idx)?;
+            let low_val = low_series.get(row_idx)?;
+            let close_val = close_series.get(row_idx)?;
 
-            let volume = if let Some(vol_name) = volume_col {
-                let vol_val = df.column(vol_name)?.get(row_idx)?;
+            let volume = if let Some(vol_series) = volume_series {
+                let vol_val = vol_series.get(row_idx)?;
                 anyvalue_to_u64(vol_val).unwrap_or(0)
             } else {
                 0
@@ -83,13 +115,70 @@ impl DataLoader {
             };
 
             md.add_bar(&symbol, bar);
+            loaded_rows += 1;
+
+            if progress.enabled && (row_idx + 1) % progress.every_rows == 0 {
+                eprintln!(
+                    "bt cache-loader progress path={} scanned_rows={} loaded_rows={} instruments={} elapsed_ms={}",
+                    path,
+                    row_idx + 1,
+                    loaded_rows,
+                    md.instruments.len(),
+                    started.elapsed().as_millis()
+                );
+            }
         }
 
         for bars in md.bars.values_mut() {
             bars.sort_by_key(|bar| bar.timestamp);
         }
 
+        if progress.enabled {
+            eprintln!(
+                "bt cache-loader done path={} scanned_rows={} loaded_rows={} instruments={} elapsed_ms={}",
+                path,
+                height,
+                loaded_rows,
+                md.instruments.len(),
+                started.elapsed().as_millis()
+            );
+        }
+
         Ok(Arc::new(md))
+    }
+}
+
+struct LoaderProgressSettings {
+    enabled: bool,
+    every_rows: usize,
+}
+
+fn loader_progress_settings() -> LoaderProgressSettings {
+    let enabled = std::env::var("BT_CACHE_DEBUG_PROGRESS")
+        .ok()
+        .map(|raw| {
+            matches!(
+                raw.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
+    let every_rows = std::env::var("BT_CACHE_PROGRESS_EVERY")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(100_000);
+
+    LoaderProgressSettings {
+        enabled,
+        every_rows,
+    }
+}
+
+fn format_range(range: Option<(i64, i64)>) -> String {
+    match range {
+        Some((start, end)) => format!("{}..{}", start, end),
+        None => "full".to_string(),
     }
 }
 

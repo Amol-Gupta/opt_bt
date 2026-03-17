@@ -3,7 +3,7 @@
 High-performance event-driven options backtesting engine in Rust.
 
 For detailed documentation, see:
-- **[Main README](docs/README.md)** – Overview, features, and installation
+- **[User Guide](docs/USER_GUIDE.md)** – Overview, features, and installation
 - **[Contributing Guide](docs/CONTRIBUTING.md)** – Local setup, development workflow, and guidelines
 
 ## Quick Start

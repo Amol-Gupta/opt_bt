@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 pub mod ipc;
@@ -12,6 +13,8 @@ use crate::cache::ipc::{
     encode_status_ok, CacheRequest,
 };
 use crate::cache::store::CacheStore;
+use crate::data::fingerprint::build_dataset_fingerprint;
+use crate::data::loader::DataLoader;
 
 #[derive(Debug, Clone)]
 pub struct CacheServerConfig {
@@ -35,10 +38,13 @@ pub fn run_cache_server(config: CacheServerConfig) -> Result<()> {
             }
         };
 
-        if let Err(err) = handle_connection(&mut stream, &state) {
-            let _ = writeln!(stream, "{}", encode_error(&err.to_string()));
-            let _ = stream.flush();
-        }
+        let state_for_conn = Arc::clone(&state);
+        std::thread::spawn(move || {
+            if let Err(err) = handle_connection(&mut stream, &state_for_conn) {
+                let _ = writeln!(stream, "{}", encode_error(&err.to_string()));
+                let _ = stream.flush();
+            }
+        });
     }
 
     Ok(())
@@ -62,13 +68,7 @@ fn handle_connection(stream: &mut TcpStream, state: &Arc<Mutex<CacheStore>>) -> 
             path,
             start_ts,
             end_ts,
-        } => {
-            let mut guard = state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("cache state lock poisoned"))?;
-            let result = guard.ensure_loaded(&path, start_ts, end_ts)?;
-            encode_ensure_loaded_ok(&result)?
-        }
+        } => encode_ensure_loaded_ok(&process_ensure_request(state, &path, start_ts, end_ts)?)?,
         CacheRequest::Evict { path } => {
             let mut guard = state
                 .lock()
@@ -80,4 +80,47 @@ fn handle_connection(stream: &mut TcpStream, state: &Arc<Mutex<CacheStore>>) -> 
     writeln!(stream, "{response}")?;
     stream.flush()?;
     Ok(())
+}
+
+fn process_ensure_request(
+    state: &Arc<Mutex<CacheStore>>,
+    path: &str,
+    start_ts: Option<i64>,
+    end_ts: Option<i64>,
+) -> Result<crate::cache::store::EnsureLoadedResult> {
+    let include_sha256 = {
+        let guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("cache state lock poisoned"))?;
+        guard.include_sha256()
+    };
+
+    let fingerprint = build_dataset_fingerprint(std::path::Path::new(path), include_sha256)?;
+    let key = if let (Some(start), Some(end)) = (start_ts, end_ts) {
+        format!("{}:{}:{}", fingerprint.key(), start, end)
+    } else {
+        fingerprint.key()
+    };
+
+    {
+        let guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("cache state lock poisoned"))?;
+        if let Some(hit) = guard.lookup_by_key(&key) {
+            return Ok(hit);
+        }
+    }
+
+    let started = Instant::now();
+    let loaded_data = if let (Some(start), Some(end)) = (start_ts, end_ts) {
+        DataLoader::load_parquet_range(path, start, end)?
+    } else {
+        DataLoader::load_parquet(path)?
+    };
+    let load_ms = started.elapsed().as_millis();
+
+    let mut guard = state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("cache state lock poisoned"))?;
+    guard.insert_loaded_with_fingerprint(key, fingerprint, start_ts, end_ts, loaded_data, load_ms)
 }

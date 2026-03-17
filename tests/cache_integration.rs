@@ -53,3 +53,28 @@ fn ensure_loaded_invalidates_on_file_change() {
 
     let _ = std::fs::remove_file(temp);
 }
+
+#[test]
+fn status_includes_entry_summaries() {
+    let mut store = CacheStore::new(false);
+    let loaded = store
+        .ensure_loaded(fixture_path(), None, None)
+        .expect("ensure should load fixture");
+
+    let status = store.status();
+    assert_eq!(status.entry_count, 1);
+    assert_eq!(status.keys.len(), 1);
+    assert_eq!(status.entries.len(), 1);
+
+    let summary = &status.entries[0];
+    assert_eq!(summary.key, status.keys[0]);
+    assert_eq!(
+        summary.entry.fingerprint.canonical_path,
+        loaded.entry.fingerprint.canonical_path
+    );
+    assert_eq!(summary.entry.snapshot_path, loaded.entry.snapshot_path);
+    assert_eq!(
+        summary.shared_handle.generation,
+        loaded.shared_handle.generation
+    );
+}

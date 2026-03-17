@@ -32,9 +32,17 @@ pub struct EnsureLoadedResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheStatusEntry {
+    pub key: String,
+    pub entry: CacheEntry,
+    pub shared_handle: SharedSnapshotHandle,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStatus {
     pub entry_count: usize,
     pub keys: Vec<String>,
+    pub entries: Vec<CacheStatusEntry>,
 }
 
 #[derive(Debug)]
@@ -69,19 +77,10 @@ impl CacheStore {
     ) -> Result<EnsureLoadedResult> {
         let fingerprint =
             build_dataset_fingerprint(std::path::Path::new(path), self.include_sha256)?;
-        let key = if let (Some(start), Some(end)) = (start_ts, end_ts) {
-            format!("{}:{}:{}", fingerprint.key(), start, end)
-        } else {
-            fingerprint.key()
-        };
+        let key = cache_key_for(&fingerprint, start_ts, end_ts);
 
-        if let Some(existing) = self.entries.get(&key) {
-            return Ok(EnsureLoadedResult {
-                entry: existing.entry.clone(),
-                cache_hit: true,
-                load_ms: 0,
-                shared_handle: existing.shared_handle.clone(),
-            });
+        if let Some(existing) = self.lookup_by_key(&key) {
+            return Ok(existing);
         }
 
         let started = Instant::now();
@@ -91,6 +90,42 @@ impl CacheStore {
             DataLoader::load_parquet(path)?
         };
         let load_ms = started.elapsed().as_millis();
+
+        self.insert_loaded_with_fingerprint(
+            key,
+            fingerprint,
+            start_ts,
+            end_ts,
+            market_data,
+            load_ms,
+        )
+    }
+
+    pub fn include_sha256(&self) -> bool {
+        self.include_sha256
+    }
+
+    pub fn lookup_by_key(&self, key: &str) -> Option<EnsureLoadedResult> {
+        self.entries.get(key).map(|existing| EnsureLoadedResult {
+            entry: existing.entry.clone(),
+            cache_hit: true,
+            load_ms: 0,
+            shared_handle: existing.shared_handle.clone(),
+        })
+    }
+
+    pub fn insert_loaded_with_fingerprint(
+        &mut self,
+        key: String,
+        fingerprint: DatasetFingerprint,
+        start_ts: Option<i64>,
+        end_ts: Option<i64>,
+        market_data: Arc<MarketData>,
+        load_ms: u128,
+    ) -> Result<EnsureLoadedResult> {
+        if let Some(existing) = self.lookup_by_key(&key) {
+            return Ok(existing);
+        }
 
         let bar_count = market_data
             .bars
@@ -152,12 +187,35 @@ impl CacheStore {
     }
 
     pub fn status(&self) -> CacheStatus {
-        let mut keys: Vec<String> = self.entries.keys().cloned().collect();
-        keys.sort();
+        let mut summaries: Vec<CacheStatusEntry> = self
+            .entries
+            .iter()
+            .map(|(key, value)| CacheStatusEntry {
+                key: key.clone(),
+                entry: value.entry.clone(),
+                shared_handle: value.shared_handle.clone(),
+            })
+            .collect();
+        summaries.sort_by(|left, right| left.key.cmp(&right.key));
+
+        let keys = summaries.iter().map(|item| item.key.clone()).collect();
 
         CacheStatus {
-            entry_count: keys.len(),
+            entry_count: summaries.len(),
             keys,
+            entries: summaries,
         }
+    }
+}
+
+fn cache_key_for(
+    fingerprint: &DatasetFingerprint,
+    start_ts: Option<i64>,
+    end_ts: Option<i64>,
+) -> String {
+    if let (Some(start), Some(end)) = (start_ts, end_ts) {
+        format!("{}:{}:{}", fingerprint.key(), start, end)
+    } else {
+        fingerprint.key()
     }
 }

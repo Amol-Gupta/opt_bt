@@ -4,6 +4,7 @@ use opt_bt::cache::snapshot::{
     load_market_data_snapshot, load_market_data_snapshot_view_with_backend,
     validate_shared_snapshot_handle,
 };
+use opt_bt::cache::store::{CacheStatus, CacheStatusEntry};
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
 use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
@@ -64,7 +65,7 @@ enum Commands {
         #[command(subcommand)]
         command: CacheCommands,
     },
-    #[command(about = "Inspect market data bars from cache snapshots")]
+    #[command(about = "Inspect market data bars from cache snapshots (cache-only)")]
     Data {
         #[command(subcommand)]
         command: DataCommands,
@@ -269,7 +270,7 @@ struct CacheLoadBenchArgs {
 
 #[derive(Args, Debug)]
 struct DataIndexArgs {
-    #[arg(long, help = "Input parquet data path")]
+    #[arg(long, help = "Optional input parquet data path")]
     data: Option<String>,
     #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
     project: Option<String>,
@@ -295,7 +296,7 @@ struct DataIndexArgs {
 
 #[derive(Args, Debug)]
 struct DataContractArgs {
-    #[arg(long, help = "Input parquet data path")]
+    #[arg(long, help = "Optional input parquet data path")]
     data: Option<String>,
     #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
     project: Option<String>,
@@ -315,7 +316,7 @@ struct DataContractArgs {
 
 #[derive(Args, Debug)]
 struct DataSliceArgs {
-    #[arg(long, help = "Input parquet data path")]
+    #[arg(long, help = "Optional input parquet data path")]
     data: Option<String>,
     #[arg(long, help = "Project name inside workspace (for bt.toml defaults)")]
     project: Option<String>,
@@ -347,6 +348,7 @@ struct DataSliceArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WorkspaceManifest {
     projects_dir: Option<String>,
+    default_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -647,10 +649,20 @@ fn run_cache_load_bench_cmd(args: CacheLoadBenchArgs) -> Result<(), DynError> {
 }
 
 fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
-    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let addr = cache_server_addr();
+    let cache_status = cache_ipc::status(&addr)?;
+    let data = resolve_data_for_query(
+        args.data,
+        args.project.as_deref(),
+        args.workspace.clone(),
+        &cache_status,
+    )?;
     let (start_date, end_date) = resolve_query_dates(args.date, args.start_date, args.end_date)?;
     let (start_ts, end_ts) = opt_bt::config::parse_date_range_to_epoch(&start_date, &end_date)?;
-    let market_data = load_market_data_for_query(&data, Some((start_ts, end_ts)))?;
+    let (market_data, cache_entry) =
+        load_market_data_for_query(&cache_status, &data, Some((start_ts, end_ts)))?;
+
+    print_cache_entry_summary(&addr, &cache_entry);
 
     let instrument_id = market_data
         .get_id(&args.symbol)
@@ -696,10 +708,20 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
 }
 
 fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
-    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let addr = cache_server_addr();
+    let cache_status = cache_ipc::status(&addr)?;
+    let data = resolve_data_for_query(
+        args.data,
+        args.project.as_deref(),
+        args.workspace.clone(),
+        &cache_status,
+    )?;
     let (start_ts, end_ts) =
         opt_bt::config::parse_date_range_to_epoch(&args.start_date, &args.end_date)?;
-    let market_data = load_market_data_for_query(&data, Some((start_ts, end_ts)))?;
+    let (market_data, cache_entry) =
+        load_market_data_for_query(&cache_status, &data, Some((start_ts, end_ts)))?;
+
+    print_cache_entry_summary(&addr, &cache_entry);
 
     let instrument_id = market_data
         .get_id(&args.symbol)
@@ -739,10 +761,19 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
 }
 
 fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
-    let data = resolve_data_for_query(args.data, args.project.as_deref(), args.workspace.clone())?;
+    let addr = cache_server_addr();
+    let cache_status = cache_ipc::status(&addr)?;
+    let data = resolve_data_for_query(
+        args.data,
+        args.project.as_deref(),
+        args.workspace.clone(),
+        &cache_status,
+    )?;
     let (day_start_ts, day_end_ts) =
         opt_bt::config::parse_date_range_to_epoch(&args.date, &args.date)?;
-    let market_data = load_market_data_for_query(&data, Some((day_start_ts, day_end_ts)))?;
+    let (market_data, cache_entry) =
+        load_market_data_for_query(&cache_status, &data, Some((day_start_ts, day_end_ts)))?;
+    print_cache_entry_summary(&addr, &cache_entry);
     let query_ts = parse_date_time_utc_epoch(&args.date, &args.time)?;
     let query_minute_end_ts = query_ts + 59;
     let query_yyyymmdd = yyyymmdd_from_date(&args.date)?;
@@ -880,12 +911,23 @@ fn resolve_data_for_query(
     data: Option<String>,
     project: Option<&str>,
     workspace: Option<PathBuf>,
+    cache_status: &CacheStatus,
 ) -> Result<String, DynError> {
     if let Some(path) = data {
-        if !Path::new(&path).exists() {
-            return Err(format!("configured data path does not exist: {path}").into());
-        }
         return Ok(path);
+    }
+
+    if let Ok(path) = std::env::var("BT_DATA") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    if let Some((workspace_root, manifest)) = try_load_workspace_manifest(workspace.clone())? {
+        if let Some(path) = manifest.default_data.as_deref() {
+            return Ok(resolve_workspace_relative_path(&workspace_root, path));
+        }
     }
 
     if let Some(project_name) = project {
@@ -894,14 +936,17 @@ fn resolve_data_for_query(
         let project_root = resolve_project_root(&root, &manifest, project_name)?;
         let project_file = load_project_file(&project_root)?;
         if let Some(path) = project_file.run.and_then(|r| r.data) {
-            if !Path::new(&path).exists() {
-                return Err(format!("configured data path does not exist: {path}").into());
-            }
             return Ok(path);
         }
     }
 
-    Err("missing data path: provide --data or --project with [run].data".into())
+    if let Some(path) = only_cached_dataset_path(cache_status) {
+        return Ok(path);
+    }
+
+    Err(
+        "missing data path: provide --data, set BT_DATA, configure .bt/workspace.toml default_data, provide --project with [run].data, or keep exactly one dataset in cache".into(),
+    )
 }
 
 fn resolve_query_dates(
@@ -920,14 +965,155 @@ fn resolve_query_dates(
 }
 
 fn load_market_data_for_query(
+    cache_status: &CacheStatus,
     data_path: &str,
     range: Option<(i64, i64)>,
-) -> Result<Arc<MarketData>, DynError> {
-    let addr = std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
-    let ensured = cache_ipc::ensure_loaded(&addr, data_path, range)?;
-    let snapshot_path = Path::new(&ensured.entry.snapshot_path);
-    validate_shared_snapshot_handle(snapshot_path, &ensured.shared_handle)?;
-    Ok(load_market_data_snapshot(snapshot_path)?)
+) -> Result<(Arc<MarketData>, CacheStatusEntry), DynError> {
+    let cache_entry = resolve_cached_entry_for_query(cache_status, data_path, range)?;
+    let snapshot_path = Path::new(&cache_entry.entry.snapshot_path);
+    validate_shared_snapshot_handle(snapshot_path, &cache_entry.shared_handle)?;
+    Ok((load_market_data_snapshot(snapshot_path)?, cache_entry))
+}
+
+fn cache_server_addr() -> String {
+    std::env::var("BT_CACHE_ADDR").unwrap_or_else(|_| "127.0.0.1:7878".to_string())
+}
+
+fn try_load_workspace_manifest(
+    path: Option<PathBuf>,
+) -> Result<Option<(PathBuf, WorkspaceManifest)>, DynError> {
+    let root = resolve_root(path)?;
+    let manifest_path = root.join(".bt/workspace.toml");
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+    Ok(Some((root.clone(), load_workspace_manifest(&root)?)))
+}
+
+fn resolve_workspace_relative_path(workspace_root: &Path, value: &str) -> String {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        value.to_string()
+    } else {
+        workspace_root.join(path).to_string_lossy().to_string()
+    }
+}
+
+fn normalize_dataset_lookup_path(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| PathBuf::from(path))
+        .to_string_lossy()
+        .to_string()
+}
+
+fn only_cached_dataset_path(cache_status: &CacheStatus) -> Option<String> {
+    let mut datasets: Vec<String> = cache_status
+        .entries
+        .iter()
+        .map(|item| item.entry.fingerprint.canonical_path.clone())
+        .collect();
+    datasets.sort();
+    datasets.dedup();
+    if datasets.len() == 1 {
+        datasets.into_iter().next()
+    } else {
+        None
+    }
+}
+
+fn resolve_cached_entry_for_query(
+    cache_status: &CacheStatus,
+    data_path: &str,
+    requested_range: Option<(i64, i64)>,
+) -> Result<CacheStatusEntry, DynError> {
+    let normalized = normalize_dataset_lookup_path(data_path);
+    let candidates: Vec<&CacheStatusEntry> = cache_status
+        .entries
+        .iter()
+        .filter(|item| item.entry.fingerprint.canonical_path == normalized)
+        .collect();
+
+    if candidates.is_empty() {
+        return Err(format!(
+            "dataset not loaded in cache: {} (run bt cache warm first)",
+            data_path
+        )
+        .into());
+    }
+
+    let selected = if let Some((start_ts, end_ts)) = requested_range {
+        candidates
+            .iter()
+            .find(|item| item.entry.start_ts == Some(start_ts) && item.entry.end_ts == Some(end_ts))
+            .copied()
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find(|item| item.entry.start_ts.is_none() && item.entry.end_ts.is_none())
+                    .copied()
+            })
+            .or_else(|| select_smallest_enclosing_entry(&candidates, start_ts, end_ts))
+    } else {
+        candidates
+            .iter()
+            .find(|item| item.entry.start_ts.is_none() && item.entry.end_ts.is_none())
+            .copied()
+            .or_else(|| candidates.first().copied())
+    };
+
+    selected.cloned().ok_or_else(|| {
+        format!(
+            "no cache snapshot available for dataset {} with requested range; run bt cache warm first",
+            data_path
+        )
+        .into()
+    })
+}
+
+fn select_smallest_enclosing_entry<'a>(
+    candidates: &'a [&'a CacheStatusEntry],
+    start_ts: i64,
+    end_ts: i64,
+) -> Option<&'a CacheStatusEntry> {
+    candidates
+        .iter()
+        .filter_map(|item| {
+            let range_start = item.entry.start_ts?;
+            let range_end = item.entry.end_ts?;
+            if range_start <= start_ts && range_end >= end_ts {
+                Some(((range_end - range_start), *item))
+            } else {
+                None
+            }
+        })
+        .min_by_key(|(width, _)| *width)
+        .map(|(_, item)| item)
+}
+
+fn print_cache_entry_summary(addr: &str, cache_entry: &CacheStatusEntry) {
+    let range = match (cache_entry.entry.start_ts, cache_entry.entry.end_ts) {
+        (Some(start), Some(end)) => format!("{}..{}", start, end),
+        _ => "full".to_string(),
+    };
+
+    println!("cache_addr={}", addr);
+    println!("cache_key={}", cache_entry.key);
+    println!(
+        "cache_dataset={}",
+        cache_entry.entry.fingerprint.canonical_path
+    );
+    println!("cache_range={}", range);
+    println!(
+        "cache_loaded_at_unix_secs={}",
+        cache_entry.entry.loaded_at_unix_secs
+    );
+    println!(
+        "cache_instrument_count={}",
+        cache_entry.entry.instrument_count
+    );
+    println!("cache_bar_count={}", cache_entry.entry.bar_count);
+    println!("cache_snapshot={}", cache_entry.entry.snapshot_path);
+    println!();
 }
 
 fn parse_hhmm_to_seconds(value: &str) -> Result<i64, DynError> {
@@ -1043,6 +1229,7 @@ fn workspace_init(args: WorkspaceInitArgs) -> Result<(), DynError> {
     fs::create_dir_all(&cache_dir)?;
     let manifest = WorkspaceManifest {
         projects_dir: Some("projects".to_string()),
+        default_data: None,
     };
     fs::create_dir_all(&bt_dir)?;
     fs::write(&workspace_file, toml::to_string_pretty(&manifest)?)?;
@@ -2490,4 +2677,103 @@ fn write_report_event_artifacts(report_path: &Path, output_dir: &Path) -> Result
 fn extract_sweep_data_path(config_path: &Path) -> Result<Option<String>, DynError> {
     let sweep: SweepConfig = SweepConfig::from_file(config_path.to_string_lossy().as_ref())?;
     Ok(sweep.base_config.data_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opt_bt::cache::snapshot::SharedSnapshotHandle;
+    use opt_bt::cache::store::CacheEntry;
+    use opt_bt::data::fingerprint::DatasetFingerprint;
+
+    fn sample_status_entry(
+        path: &str,
+        start_ts: Option<i64>,
+        end_ts: Option<i64>,
+        key_suffix: &str,
+    ) -> CacheStatusEntry {
+        CacheStatusEntry {
+            key: format!("{}:{}", path, key_suffix),
+            entry: CacheEntry {
+                fingerprint: DatasetFingerprint {
+                    canonical_path: path.to_string(),
+                    size_bytes: 1,
+                    modified_unix_secs: 1,
+                    sha256: None,
+                },
+                start_ts,
+                end_ts,
+                loaded_at_unix_secs: 1,
+                instrument_count: 10,
+                bar_count: 100,
+                snapshot_path: format!("/tmp/{}.rkyv", key_suffix),
+            },
+            shared_handle: SharedSnapshotHandle {
+                transport: "file_mmap".to_string(),
+                location: format!("/tmp/{}.rkyv", key_suffix),
+                format: "rkyv_market_data_v1".to_string(),
+                generation: 1,
+                byte_len: 10,
+                checksum24: 42,
+            },
+        }
+    }
+
+    #[test]
+    fn only_cached_dataset_path_uses_unique_dataset_even_with_multiple_ranges() {
+        let status = CacheStatus {
+            entry_count: 2,
+            keys: vec!["a".to_string(), "b".to_string()],
+            entries: vec![
+                sample_status_entry("/data/one.parquet", None, None, "full"),
+                sample_status_entry("/data/one.parquet", Some(1), Some(2), "range"),
+            ],
+        };
+
+        assert_eq!(
+            only_cached_dataset_path(&status),
+            Some("/data/one.parquet".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_cached_entry_prefers_exact_then_full_then_smallest_enclosing() {
+        let path = "/data/one.parquet";
+        let status = CacheStatus {
+            entry_count: 4,
+            keys: vec![
+                "1".to_string(),
+                "2".to_string(),
+                "3".to_string(),
+                "4".to_string(),
+            ],
+            entries: vec![
+                sample_status_entry(path, Some(10), Some(20), "wide"),
+                sample_status_entry(path, Some(12), Some(18), "tight"),
+                sample_status_entry(path, None, None, "full"),
+                sample_status_entry(path, Some(13), Some(17), "exact"),
+            ],
+        };
+
+        let exact = resolve_cached_entry_for_query(&status, path, Some((13, 17)))
+            .expect("exact match should resolve");
+        assert!(exact.key.ends_with("exact"));
+
+        let full = resolve_cached_entry_for_query(&status, path, Some((100, 200)))
+            .expect("full dataset entry should resolve");
+        assert!(full.key.ends_with("full"));
+
+        let status_without_full = CacheStatus {
+            entry_count: 3,
+            keys: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            entries: vec![
+                sample_status_entry(path, Some(10), Some(20), "wide"),
+                sample_status_entry(path, Some(12), Some(18), "tight"),
+                sample_status_entry(path, Some(13), Some(17), "exact"),
+            ],
+        };
+        let enclosing = resolve_cached_entry_for_query(&status_without_full, path, Some((14, 16)))
+            .expect("smallest enclosing range should resolve");
+        assert!(enclosing.key.ends_with("exact"));
+    }
 }

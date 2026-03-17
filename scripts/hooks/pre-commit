@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Pre-commit hook: Run formatting and linting checks before commit
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Check formatting
+echo "  → Checking code formatting with rustfmt..."
+cargo fmt -- --check
+if [ $? -ne 0 ]; then
+  echo "❌ Formatting check failed! Run 'cargo fmt' to fix."
+  exit 1
+fi
+
+# Check linting
+echo "  → Running clippy lints..."
+cargo clippy -- -D warnings
+if [ $? -ne 0 ]; then
+  echo "⚠️  Clippy warnings found. Fix them or run with --no-verify to skip."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed!"
+exit 0

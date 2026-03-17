@@ -93,6 +93,59 @@ bt workspace init --path ./ws
 bt project init --workspace ./ws my_strategy
 ```
 
+## Broad Architecture
+
+At a high level, `opt_bt` is an event-driven pipeline:
+
+1. **Data** loads market bars/ticks from parquet.
+2. **Engine** replays timeline events in simulation order.
+3. **Strategy** emits signals/orders.
+4. **Execution** applies fills/slippage/stale checks.
+5. **Portfolio/Account** updates positions, cash, and attribution.
+6. **Reporting** builds JSON/HTML outputs with reproducibility metadata.
+
+### Module Organization
+
+Core modules in `src/` are organized by responsibility:
+
+- `src/config.rs` – config models and resolution
+- `src/data/` – dataset loading, models, and views
+- `src/engine/` – run loop and sweep orchestration
+- `src/execution/` – fill/slippage/stale execution policies
+- `src/portfolio/` – account state, routing, and strategy attribution
+- `src/strategy/` – strategy interfaces and portfolio wrappers
+- `src/reporting/` – metrics, reproducibility, JSON/HTML report generation
+- `src/bin/bt.rs` – workspace/project CLI orchestration
+- `src/main.rs` – `opt_bt` executable entrypoint
+
+## Integration Testing
+
+When adding new strategies or features to the engine directly, use integration tests under `tests/`:
+
+### Test structure
+- Create synthetic `MarketData` fixtures
+- Instantiate `Engine` and run: `engine.init(); engine.run();`
+- Assert trades/positions and lifecycle behavior
+
+### Reference examples
+- [`tests/single_run.rs`](../tests/single_run.rs) – basic engine lifecycle
+- [`tests/atm_straddle.rs`](../tests/atm_straddle.rs) – strategy-specific validation
+- [`tests/portfolio_test.rs`](../tests/portfolio_test.rs) – portfolio composition
+
+## Runtime Usage Docs
+
+The following runtime topics are intentionally documented in [USER_GUIDE.md](USER_GUIDE.md):
+
+- binaries and command surface (`bt`, `opt_bt`, project runners)
+- cache server behavior and warm/cold run flow (including `rkyv` snapshot format)
+- `bt data` quick lookup workflows for post-run analysis
+- workspace structure (`.bt/`, `projects/`, `backtests/`)
+- `bt.toml` and `generated/strategy_registry.rs` runtime details
+- strategy compile/link/discovery execution path in [CompileFlow.md](CompileFlow.md)
+- portfolio usage examples
+
+Use this Contributing guide for developer workflow and repository architecture.
+
 ## Development Workflow
 
 1. Create a feature branch: `git checkout -b feature/your-feature`

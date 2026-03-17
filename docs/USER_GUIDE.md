@@ -2,11 +2,6 @@
 
 High-performance event-driven options backtesting engine in Rust.
 
-## What it does
-- Runs single backtests over Parquet historical data
-- Runs multicore parameter sweeps
-- Supports portfolio-of-strategies runtime with shared account routing
-- Emits JSON report output with reproducibility metadata
 
 ## Install from GitHub
 
@@ -30,6 +25,15 @@ Notes:
 - make sure `~/.cargo/bin` is on `PATH`
 
 For local development, see [Contributing Guide](CONTRIBUTING.md#development-mode--binary-deployment).
+
+## Binaries Overview
+
+- `bt`
+  - workspace/project CLI for day-to-day usage (`workspace`, `project`, `run`, `sweep`, `cache`, `data`, `clean`)
+- `opt_bt`
+  - engine executable and lower-level runtime entrypoint used by `bt` and direct engine runs
+- project-generated strategy runner
+  - generated per workspace project for project-local strategy registration/run glue
 
 ## `bt` CLI (workspace-oriented)
 
@@ -99,6 +103,13 @@ bt <command> --help
 - `bt cache evict --data <path> [--json]`
   - Removes cache entries for a dataset path.
 
+Cache behavior concept:
+
+- first run is typically **cold** (load/decode from parquet)
+- repeated runs become **warm** (reuse cached dataset state)
+- this is especially useful for repeated parameter sweeps/backtests on the same data
+- cache snapshots are stored in `rkyv` serialized market-data format (`rkyv_market_data_v1`) to reduce restore overhead
+
 #### `bt data`
 - `bt data index --data <path> --symbol <name> [--date YYYY-MM-DD | --start-date ... --end-date ...] [--minute HH:MM] [--window-minutes N]`
   - Prints index bars for a symbol (single day or date range).
@@ -106,6 +117,12 @@ bt <command> --help
   - Prints bars for a specific option contract over a time window.
 - `bt data slice --data <path> --date YYYY-MM-DD --time HH:MM --center-strike <strike> --points <N> [--expiry YYYY-MM-DD] [--fill-forward]`
   - Prints CE/PE strike ladder around a center strike at one timestamp.
+
+Why `bt data` is useful:
+
+- quick contract/index validation without running a full backtest
+- fast spot checks while analyzing backtest outcomes
+- helpful to verify whether expected symbols/timestamps exist in source data
 
 Examples:
 ```bash
@@ -240,9 +257,9 @@ The strategy trait currently supports:
 Per-day runner sequencing:
 `on_date_change -> before_open -> intraday events -> after_close`
 
-## Tutorial: write your own strategy
+## Tutorial: Write Your Own Strategy
 
-This is the fastest path to add a new strategy to this engine.
+This is the fastest path to add a new strategy to the engine.
 
 ### 1) Create a strategy struct
 Add your strategy in `src/strategy/examples/` (or another module under `src/strategy/`).
@@ -327,57 +344,53 @@ cargo run --release -- run \
 ```
 
 ### 5) Add tests
-Use integration tests under `tests/`:
-- create synthetic `MarketData`
-- run `Engine::new(...).init(); engine.run();`
-- assert trades/positions and lifecycle behavior
+See [Contributing Guide](CONTRIBUTING.md#integration-testing) for integration testing guidance and reference examples.
 
-Reference examples:
-- `tests/single_run.rs`
-- `tests/atm_straddle.rs`
-- `tests/portfolio_test.rs`
+## Project Configuration Reference
 
-## Stage 1 `bt` CLI workflow (alpha)
+#### `bt.toml` (project runtime contract)
 
-This is the current stage-1 direction for external strategy development UX:
-- users do not write `main`
-- users do not wire strategy factory match-arms manually
-- `bt` orchestrates scaffolding, compile/link, and run
+`projects/<name>/bt.toml` defines project defaults and runtime behavior:
 
-### Command surface
-- `bt workspace init`
-- `bt project init <name>`
-- `bt run --project <name> ...`
-- `bt sweep --project <name> --config <file>`
-- `bt list-strategies --project <name> [--json]`
-- `bt clean --project <name>`
+- `[project]` – project identity
+- `[engine]` – engine path/bin binding
+- `[run]` – benchmark, default strategy, data path, date range, capital, log mode
+- `[run.params]` – default strategy parameters
+- `[strategy_registry]` – strategy discovery/fallback behavior
 
-### Workspace model
-One workspace contains many backtesting projects:
+#### `generated/strategy_registry.rs`
 
-```text
-my_bt_workspace/
-├── .bt/
-│   ├── workspace.toml
-│   └── cache/
-└── projects/
-    ├── nifty_sma/
-    │   ├── bt.toml
-    │   ├── strategy/
-    │   └── generated/    # bt-managed runner/registration glue
-    └── options_straddle/
-        ├── bt.toml
-        ├── strategy/
-        └── generated/
+Generated glue that maps strategy IDs to constructors.
+
+- deterministic registration behavior across environments
+- used by run/list-strategies flow
+- treat as generated artifact (avoid manual business logic edits)
+
+For more details on strategy discovery and compilation, see [CompileFlow.md](CompileFlow.md).
+
+## Portfolio Composition Examples
+
+### Portfolio of different strategies
+
+```rust
+use opt_bt::strategy::portfolio::PortfolioStrategy;
+
+let mut portfolio = PortfolioStrategy::new();
+portfolio.add_strategy("trend", Box::new(TrendStrategy::new(20, 50)));
+portfolio.add_strategy("mr", Box::new(MeanReversionStrategy::new(14)));
 ```
 
-### Expected flow
-1. Initialize workspace: `bt workspace init`
-2. Create project scaffold: `bt project init nifty_sma`
-3. Edit strategy code only in `projects/nifty_sma/strategy/`
-4. Run backtest: `bt run --project nifty_sma --strategy sma_nifty50 --data ./sample_data/niftyIndex2024.sample.parquet`
-5. Run sweep: `bt sweep --project nifty_sma --config ./sweep.json`
-6. Discover registered strategies: `bt list-strategies --project nifty_sma --json`
+### Portfolio using same strategy with different parameters
+
+```rust
+use opt_bt::strategy::portfolio::PortfolioStrategy;
+
+let mut portfolio = PortfolioStrategy::new();
+portfolio.add_strategy("straddle_fast", Box::new(WeeklyStraddle::new(0.55, 50, 42)));
+portfolio.add_strategy("straddle_slow", Box::new(WeeklyStraddle::new(0.35, 75, 99)));
+```
+
+This pattern is useful for parameter diversification and attribution comparison.
 
 ### Compile/check before run (recommended)
 If strategy discovery fails, run `cargo check` before `bt run`.

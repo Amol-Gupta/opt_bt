@@ -1,6 +1,7 @@
 use crate::common::types::{OrderType, PRICE_SCALE};
 use crate::data::view::MarketDataView;
 use crate::engine::runner::Engine;
+use crate::portfolio::models::Position;
 use crate::portfolio::manager::StrategyAttribution;
 use crate::reporting::metrics::calculate_metrics;
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
@@ -8,7 +9,7 @@ use crate::reporting::post_analysis::{run_post_analysis, FlatRateTaxModel, PostA
 use crate::strategy::Strategy;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub const DEFAULT_BENCHMARK_SYMBOL: &str = "NIFTY 50";
 
@@ -23,8 +24,11 @@ pub struct BacktestReport {
     pub fills: Vec<FillRecord>,
     pub order_events: Vec<OrderEventRecord>,
     pub position_events: Vec<PositionEventRecord>,
+    #[serde(default)]
+    pub daily_equity_curve: Vec<DailyEquityPoint>,
+    #[serde(default)]
+    pub daily_drawdown_curve: Vec<DailyDrawdownPoint>,
     pub warnings: Vec<String>,
-    // pub equity_curve: Vec<EquityPoint>, // Commented out for now
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -33,6 +37,8 @@ pub struct Reproducibility {
     pub strategy_version: String,
     pub strategy_name: String,
     pub parameters: HashMap<String, String>, // Simplified for MVP
+    #[serde(default)]
+    pub strategy_parameters: HashMap<String, HashMap<String, String>>,
     pub config: HashMap<String, String>,
     pub dataset: DatasetMetadata,
 }
@@ -179,6 +185,19 @@ pub struct EquityPoint {
     pub drawdown_pct: f64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DailyEquityPoint {
+    pub date: String,
+    pub equity: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DailyDrawdownPoint {
+    pub date: String,
+    pub drawdown_pct: f64,
+    pub drawdown_abs: f64,
+}
+
 fn format_timestamp(ts: i64) -> String {
     // Assuming ts is seconds? Or millis?
     // Bar timestamp usually seconds.
@@ -278,12 +297,20 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
     let tax_model = FlatRateTaxModel::new("flat_rate_0pct", 0.0);
     let post_analysis = run_post_analysis(&engine.context.account.trades, &tax_model);
     let portfolio = build_portfolio_view(&engine.context.account);
+    let (daily_equity_curve, daily_drawdown_curve) = build_daily_curves(
+        raw_trades,
+        engine.market_data.as_ref(),
+        engine.context.account.initial_capital,
+        simulation_start_ts,
+        simulation_end_ts,
+    );
 
     let reproducibility = reproducibility.unwrap_or_else(|| Reproducibility {
         engine_version: env!("CARGO_PKG_VERSION").to_string(),
         strategy_version: "unknown".to_string(),
         strategy_name: "Strategy".to_string(),
         parameters: HashMap::new(),
+        strategy_parameters: HashMap::new(),
         config: HashMap::new(),
         dataset: DatasetMetadata {
             source: "unknown".to_string(),
@@ -309,8 +336,111 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         fills,
         order_events,
         position_events,
+        daily_equity_curve,
+        daily_drawdown_curve,
         warnings: engine.context.warnings.clone(),
     }
+}
+
+fn build_daily_curves(
+    raw_trades: &[crate::portfolio::models::Trade],
+    market_data: &dyn MarketDataView,
+    initial_capital: i64,
+    start_ts: i64,
+    end_ts: i64,
+) -> (Vec<DailyEquityPoint>, Vec<DailyDrawdownPoint>) {
+    let mut last_timestamp_by_day: BTreeMap<String, i64> = BTreeMap::new();
+    for timestamp in market_data.market_timeline() {
+        if timestamp < start_ts || timestamp > end_ts {
+            continue;
+        }
+        let Some(dt) = DateTime::<Utc>::from_timestamp(timestamp, 0) else {
+            continue;
+        };
+        let day_key = dt.format("%Y-%m-%d").to_string();
+        last_timestamp_by_day
+            .entry(day_key)
+            .and_modify(|existing| {
+                if timestamp > *existing {
+                    *existing = timestamp;
+                }
+            })
+            .or_insert(timestamp);
+    }
+
+    if last_timestamp_by_day.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut sorted_trades = raw_trades.to_vec();
+    sorted_trades.sort_by_key(|trade| trade.timestamp);
+
+    let mut trade_index = 0usize;
+    let mut cash = initial_capital;
+    let mut positions: HashMap<u32, Position> = HashMap::new();
+
+    let mut peak_equity = initial_capital as f64 / PRICE_SCALE as f64;
+    let mut equity_curve = Vec::new();
+    let mut drawdown_curve = Vec::new();
+
+    for (day, day_timestamp) in last_timestamp_by_day {
+        while trade_index < sorted_trades.len() && sorted_trades[trade_index].timestamp <= day_timestamp {
+            let trade = &sorted_trades[trade_index];
+            let cost = (trade.quantity as i128 * trade.price as i128) as i64;
+            match trade.side {
+                crate::common::types::Side::Buy => {
+                    cash -= cost;
+                    cash -= trade.fee;
+                }
+                crate::common::types::Side::Sell => {
+                    cash += cost;
+                    cash -= trade.fee;
+                }
+            }
+
+            let position = positions
+                .entry(trade.instrument_id)
+                .or_insert_with(|| Position::new(trade.instrument_id));
+            position.update(trade);
+            trade_index += 1;
+        }
+
+        let mut position_value: i64 = 0;
+        for (instrument_id, position) in &positions {
+            if position.quantity == 0 {
+                continue;
+            }
+            let mark = market_data
+                .get_bar_at_or_before(*instrument_id, day_timestamp)
+                .map(|bar| bar.close)
+                .unwrap_or(position.avg_cost);
+            position_value += (position.quantity as i128 * mark as i128) as i64;
+        }
+
+        let equity_scaled = cash + position_value;
+        let equity = equity_scaled as f64 / PRICE_SCALE as f64;
+        if equity > peak_equity {
+            peak_equity = equity;
+        }
+        let drawdown_abs = equity - peak_equity;
+        let drawdown_pct = if peak_equity.abs() > f64::EPSILON {
+            (drawdown_abs / peak_equity) * 100.0
+        } else {
+            0.0
+        };
+
+        equity_curve.push(DailyEquityPoint {
+            date: day.clone(),
+            equity,
+        });
+        drawdown_curve.push(DailyDrawdownPoint {
+            date: day,
+            drawdown_pct,
+            drawdown_abs,
+        });
+    }
+
+    (equity_curve, drawdown_curve)
 }
 
 fn build_benchmark_returns(

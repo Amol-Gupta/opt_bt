@@ -4,9 +4,9 @@ use std::path::Path;
 use crate::reporting::json::{BacktestReport, FillRecord};
 
 pub fn generate_html_report(report: &BacktestReport) -> String {
-  let starting_capital = report.metrics.start_equity;
-  let profit_abs = report.metrics.end_equity - report.metrics.start_equity;
-  let max_drawdown_abs = report.metrics.start_equity * (report.metrics.max_drawdown_pct / 100.0);
+    let starting_capital = report.metrics.start_equity;
+    let profit_abs = report.metrics.end_equity - report.metrics.start_equity;
+    let max_drawdown_abs = report.metrics.start_equity * (report.metrics.max_drawdown_pct / 100.0);
 
     let mut fills_rows = String::new();
     for fill in &report.fills {
@@ -31,6 +31,30 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
         warning_items.push_str(&format!("<li>{}</li>", html_escape(warning)));
     }
 
+    let strategy_params_rows = render_strategy_params_rows(report);
+    let equity_values: Vec<f64> = report
+      .daily_equity_curve
+      .iter()
+      .map(|point| point.equity)
+      .collect();
+    let drawdown_values: Vec<f64> = report
+      .daily_drawdown_curve
+      .iter()
+      .map(|point| point.drawdown_pct)
+      .collect();
+    let equity_chart = render_svg_line_chart(&equity_values, "#2d7ef7");
+    let drawdown_chart = render_svg_line_chart(&drawdown_values, "#d64545");
+    let start_day = report
+      .daily_equity_curve
+      .first()
+      .map(|point| point.date.clone())
+      .unwrap_or_else(|| "N/A".to_string());
+    let end_day = report
+      .daily_equity_curve
+      .last()
+      .map(|point| point.date.clone())
+      .unwrap_or_else(|| "N/A".to_string());
+
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -46,10 +70,13 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
     .card {{ border: 1px solid #ddd; padding: 12px; border-radius: 8px; }}
     .label {{ color: #666; font-size: 12px; margin-bottom: 4px; }}
     .value {{ font-size: 18px; font-weight: 600; }}
+    .muted {{ color: #666; font-size: 12px; }}
     table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
     th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }}
     th {{ background: #f7f7f7; }}
     ul {{ margin: 8px 0 0 20px; }}
+    .chart {{ border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #fff; }}
+    .chart svg {{ width: 100%; height: 220px; display: block; }}
   </style>
 </head>
 <body>
@@ -84,6 +111,28 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
   </div>
 
   <div class="section">
+    <h2>Strategy Parameters</h2>
+    <table>
+      <thead>
+        <tr><th>Strategy</th><th>Parameters</th></tr>
+      </thead>
+      <tbody>{}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Daily Equity Curve</h2>
+    <div class="chart">{}</div>
+    <div class="muted">Range: {} to {} | Points: {}</div>
+  </div>
+
+  <div class="section">
+    <h2>Drawdown Curve (Daily)</h2>
+    <div class="chart">{}</div>
+    <div class="muted">Range: {} to {} | Points: {}</div>
+  </div>
+
+  <div class="section">
     <h2>Fills</h2>
     <table>
       <thead>
@@ -100,11 +149,11 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
 </body>
 </html>
 "#,
-  format_inr(starting_capital),
-  format_inr(profit_abs),
-  report.metrics.total_return_pct,
-  format_inr(max_drawdown_abs),
-  report.metrics.max_drawdown_pct,
+        format_inr(starting_capital),
+        format_inr(profit_abs),
+        report.metrics.total_return_pct,
+        format_inr(max_drawdown_abs),
+        report.metrics.max_drawdown_pct,
         report.metrics.cagr_pct,
         report.metrics.sharpe_ratio,
         report.metrics.sortino_ratio,
@@ -113,6 +162,15 @@ pub fn generate_html_report(report: &BacktestReport) -> String {
         report.portfolio.total_realized_pnl,
         report.portfolio.total_fees_paid,
         strategy_rows,
+        strategy_params_rows,
+        equity_chart,
+        html_escape(&start_day),
+        html_escape(&end_day),
+        equity_values.len(),
+        drawdown_chart,
+        html_escape(&start_day),
+        html_escape(&end_day),
+        drawdown_values.len(),
         fills_rows,
         warning_items,
     )
@@ -149,6 +207,94 @@ fn html_escape(input: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+    fn render_strategy_params_rows(report: &BacktestReport) -> String {
+      let mut strategy_parameters = report.reproducibility.strategy_parameters.clone();
+      if strategy_parameters.is_empty() {
+        strategy_parameters.insert(
+          report.reproducibility.strategy_name.clone(),
+          report.reproducibility.parameters.clone(),
+        );
+      }
+
+      let mut strategy_ids: Vec<String> = strategy_parameters.keys().cloned().collect();
+      strategy_ids.sort();
+
+      let mut rows = String::new();
+      for strategy_id in strategy_ids {
+        let params = strategy_parameters
+          .get(&strategy_id)
+          .cloned()
+          .unwrap_or_default();
+        let mut keys: Vec<String> = params.keys().cloned().collect();
+        keys.sort();
+        let params_text = if keys.is_empty() {
+          "(none)".to_string()
+        } else {
+          keys.iter()
+            .map(|key| {
+              format!(
+                "{}={}",
+                html_escape(key),
+                html_escape(params.get(key).unwrap_or(&String::new()))
+              )
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
+        };
+        rows.push_str(&format!(
+          "<tr><td>{}</td><td>{}</td></tr>",
+          html_escape(&strategy_id),
+          params_text,
+        ));
+      }
+
+      rows
+    }
+
+    fn render_svg_line_chart(values: &[f64], stroke: &str) -> String {
+      if values.is_empty() {
+        return "<div class=\"muted\">No daily data available</div>".to_string();
+      }
+
+      let width = 900.0;
+      let height = 220.0;
+      let padding = 16.0;
+
+      let min_value = values
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, |acc, v| acc.min(v));
+      let max_value = values
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, |acc, v| acc.max(v));
+      let value_range = (max_value - min_value).max(1e-9);
+
+      let points = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+          let x = if values.len() <= 1 {
+            width / 2.0
+          } else {
+            padding + (index as f64 / (values.len() as f64 - 1.0)) * (width - 2.0 * padding)
+          };
+          let normalized = (value - min_value) / value_range;
+          let y = height - padding - normalized * (height - 2.0 * padding);
+          format!("{:.2},{:.2}", x, y)
+        })
+        .collect::<Vec<String>>()
+        .join(" ");
+
+      format!(
+        "<svg viewBox=\"0 0 {:.0} {:.0}\" preserveAspectRatio=\"none\"><polyline fill=\"none\" stroke=\"{}\" stroke-width=\"2\" points=\"{}\"/></svg>",
+        width,
+        height,
+        html_escape(stroke),
+        points
+      )
+    }
+
     fn format_inr(value: f64) -> String {
       if value.is_sign_negative() {
         format!("-₹{:.2}", value.abs())
@@ -163,8 +309,8 @@ mod tests {
 
     use super::*;
     use crate::reporting::json::{
-        BacktestReport, DatasetMetadata, FillRecord, Metrics, Reproducibility, Simulation,
-        StrategyAttributionRecord,
+      BacktestReport, DailyDrawdownPoint, DailyEquityPoint, DatasetMetadata, FillRecord,
+      Metrics, Reproducibility, Simulation, StrategyAttributionRecord,
     };
     use crate::reporting::portfolio::PortfolioView;
     use crate::reporting::post_analysis::{PostAnalysisSummary, TaxSummary};
@@ -176,6 +322,10 @@ mod tests {
                 strategy_version: "s0".to_string(),
                 strategy_name: "demo".to_string(),
                 parameters: HashMap::new(),
+              strategy_parameters: HashMap::from([(
+                "demo".to_string(),
+                HashMap::from([("qty".to_string(), "65".to_string())]),
+              )]),
                 config: HashMap::new(),
                 dataset: DatasetMetadata {
                     source: "x".to_string(),
@@ -261,6 +411,15 @@ mod tests {
             }],
             order_events: vec![],
             position_events: vec![],
+            daily_equity_curve: vec![DailyEquityPoint {
+              date: "2024-01-01".to_string(),
+              equity: 1000.0,
+            }],
+            daily_drawdown_curve: vec![DailyDrawdownPoint {
+              date: "2024-01-01".to_string(),
+              drawdown_pct: -1.0,
+              drawdown_abs: -10.0,
+            }],
             warnings: vec!["ok".to_string()],
         }
     }
@@ -271,12 +430,16 @@ mod tests {
         assert!(html.contains("Backtest Report"));
         assert!(html.contains("Summary Metrics"));
         assert!(html.contains("Portfolio View"));
-      assert!(html.contains("Fills"));
-      assert!(html.contains("Starting Capital"));
-      assert!(html.contains("Profit"));
-      assert!(html.contains("₹1000.00"));
-      assert!(html.contains("₹15.00 (1.50%)"));
-      assert!(html.contains("-₹23.00 (-2.30%)"));
+        assert!(html.contains("Fills"));
+        assert!(html.contains("Starting Capital"));
+        assert!(html.contains("Profit"));
+        assert!(html.contains("₹1000.00"));
+        assert!(html.contains("₹15.00 (1.50%)"));
+        assert!(html.contains("-₹23.00 (-2.30%)"));
+        assert!(html.contains("Strategy Parameters"));
+        assert!(html.contains("qty=65"));
+        assert!(html.contains("Daily Equity Curve"));
+        assert!(html.contains("Drawdown Curve (Daily)"));
     }
 
     #[test]

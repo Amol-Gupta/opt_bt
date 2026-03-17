@@ -53,6 +53,18 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
             .unwrap_or_else(|| "unknown".to_string())
     };
 
+    let strategy_parameters = if let Some(portfolio_cfg) = &config.portfolio {
+        portfolio_cfg
+            .strategies
+            .iter()
+            .map(|strategy| (strategy.id.clone(), strategy.params.clone()))
+            .collect::<HashMap<String, HashMap<String, String>>>()
+    } else {
+        let mut map = HashMap::new();
+        map.insert(strategy_name.clone(), config.merged_params.clone());
+        map
+    };
+
     let strategy_version = std::env::var("OPT_BT_STRATEGY_VERSION")
         .or_else(|_| std::env::var("GIT_COMMIT"))
         .unwrap_or_else(|_| "unknown".to_string());
@@ -62,6 +74,7 @@ pub fn build_reproducibility(config: &Config, data_path: &str) -> Result<Reprodu
         strategy_version,
         strategy_name,
         parameters: config.merged_params.clone(),
+        strategy_parameters,
         config: config_map,
         dataset: DatasetMetadata {
             source: data_path.to_string(),

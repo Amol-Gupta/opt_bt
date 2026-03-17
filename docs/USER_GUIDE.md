@@ -109,14 +109,24 @@ Cache behavior concept:
 - repeated runs become **warm** (reuse cached dataset state)
 - this is especially useful for repeated parameter sweeps/backtests on the same data
 - cache snapshots are stored in `rkyv` serialized market-data format (`rkyv_market_data_v1`) to reduce restore overhead
+- `bt data` is cache-first and reads from warmed cache snapshots; see the `bt data` section below for dataset resolution order and examples
 
 #### `bt data`
-- `bt data index --data <path> --symbol <name> [--date YYYY-MM-DD | --start-date ... --end-date ...] [--minute HH:MM] [--window-minutes N]`
+- `bt data index [--data <path>] [--project <name>] [--workspace <dir>] --symbol <name> [--date YYYY-MM-DD | --start-date ... --end-date ...] [--minute HH:MM] [--window-minutes N]`
   - Prints index bars for a symbol (single day or date range).
-- `bt data contract --data <path> --symbol <option_symbol> --start-date ... --end-date ... [--start-time HH:MM] [--end-time HH:MM]`
+- `bt data contract [--data <path>] [--project <name>] [--workspace <dir>] --symbol <option_symbol> --start-date ... --end-date ... [--start-time HH:MM] [--end-time HH:MM]`
   - Prints bars for a specific option contract over a time window.
-- `bt data slice --data <path> --date YYYY-MM-DD --time HH:MM --center-strike <strike> --points <N> [--expiry YYYY-MM-DD] [--fill-forward]`
+- `bt data slice [--data <path>] [--project <name>] [--workspace <dir>] --date YYYY-MM-DD --time HH:MM --center-strike <strike> --points <N> [--expiry YYYY-MM-DD] [--fill-forward]`
   - Prints CE/PE strike ladder around a center strike at one timestamp.
+
+`bt data` reads from cache snapshots only (it does not load parquet on demand). Run `bt cache warm` first.
+
+Data-path resolution order for `bt data`:
+- `--data`
+- `BT_DATA`
+- `.bt/workspace.toml` -> `default_data`
+- `--project` + project `bt.toml` -> `[run].data`
+- exactly one dataset currently present in cache
 
 Why `bt data` is useful:
 
@@ -126,21 +136,24 @@ Why `bt data` is useful:
 
 Examples:
 ```bash
+# if there is exactly one dataset in cache, --data can be omitted
 BT_CACHE_ADDR=127.0.0.1:7878 bt data index \
-  --data /quant/nifty_with_options.parquet \
   --symbol "NIFTY 50" \
   --date 2024-06-12 \
   --minute 11:00 \
   --window-minutes 1
 
+# resolve data via project config [run].data
 BT_CACHE_ADDR=127.0.0.1:7878 bt data contract \
-  --data /quant/nifty_with_options.parquet \
+  --project my_strategy \
+  --workspace ./demo_ws \
   --symbol NIFTY13JUN2423400CE \
   --start-date 2024-06-12 \
   --end-date 2024-06-12 \
   --start-time 10:55 \
   --end-time 11:10
 
+# explicit dataset override still works
 BT_CACHE_ADDR=127.0.0.1:7878 bt data slice \
   --data /quant/nifty_with_options.parquet \
   --date 2024-06-12 \
@@ -149,6 +162,8 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt data slice \
   --points 300 \
   --fill-forward
 ```
+
+Each `bt data` command prints the selected cache entry summary first (`cache_addr`, `cache_key`, `cache_dataset`, `cache_range`, `cache_snapshot`, etc.), then the requested rows.
 
 ## End-to-end workflow
 

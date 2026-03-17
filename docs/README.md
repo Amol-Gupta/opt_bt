@@ -29,37 +29,7 @@ Notes:
 - use a tag or commit SHA for `OPT_BT_RELEASE_REV`; a branch name works for testing, but tags/commits are safer
 - make sure `~/.cargo/bin` is on `PATH`
 
-## Developer instructions
-
-For source development from this repository:
-
-```bash
-cargo build --release
-cargo build --release --bin bt
-```
-
-How development mode differs from installed mode:
-- repo-local binaries (for example `cargo run --bin bt -- ...` or `./target/release/bt`) generate projects with local `path = ...` dependencies into this checkout
-- installed binaries from `~/.cargo/bin/bt` generate projects with pinned GitHub `git = ...` dependencies instead
-- both modes can coexist on the same machine; just be explicit about which `bt` binary you are invoking
-
-Example: develop here, but test installed mode in a fresh folder:
-```bash
-# source/dev mode from this checkout
-cd /home/amol/opt_bt
-cargo run --bin bt -- workspace init --path ./demo_ws_dev
-
-# installed mode in another folder
-mkdir -p /tmp/opt_bt_install_test && cd /tmp/opt_bt_install_test
-bt workspace init --path ./ws
-bt project init --workspace ./ws my_strategy
-```
-
-If you want to be explicit about which binary you are using:
-```bash
-/home/amol/opt_bt/target/debug/bt --help
-~/.cargo/bin/bt --help
-```
+For local development, see [Contributing Guide](CONTRIBUTING.md#development-mode--binary-deployment).
 
 ## `bt` CLI (workspace-oriented)
 

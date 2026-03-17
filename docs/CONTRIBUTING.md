@@ -39,6 +39,60 @@ cargo build
 cargo test
 ```
 
+## Development Mode & Binary Deployment
+
+When developing locally, you have several deployment options:
+
+### Source/Development Mode (from this repository)
+
+Build the binaries:
+```bash
+cargo build --release
+cargo build --release --bin bt
+```
+
+Run directly from source:
+```bash
+cargo run --bin bt -- workspace init --path ./demo_ws
+cargo run --bin bt -- run --workspace ./demo_ws --project my_strategy --strategy demo
+```
+
+### Installed Mode (from ~/.cargo/bin)
+
+Install the binaries globally:
+```bash
+cargo install --path . --bin bt --bin opt_bt --force
+```
+
+Run from any directory:
+```bash
+bt workspace init --path ~/my_workspace
+bt run --workspace ~/my_workspace --project my_strategy --strategy demo
+```
+
+### Key Differences
+
+- **Source mode** generates projects with `path = ...` dependencies pointing to this checkout
+- **Installed mode** generates projects with pinned `git = ...` dependencies from GitHub
+- Both modes can coexist; be explicit about which binary you're invoking:
+  ```bash
+  /home/amol/opt_bt/target/release/bt --help      # source/dev mode
+  ~/.cargo/bin/bt --help                          # installed mode
+  ```
+
+### Example: Test Both Modes
+
+```bash
+# source/dev mode from this checkout
+cd /home/amol/opt_bt
+cargo run --bin bt -- workspace init --path ./demo_ws_dev
+
+# installed mode in a fresh location
+mkdir -p /tmp/opt_bt_install_test && cd /tmp/opt_bt_install_test
+bt workspace init --path ./ws
+bt project init --workspace ./ws my_strategy
+```
+
 ## Development Workflow
 
 1. Create a feature branch: `git checkout -b feature/your-feature`

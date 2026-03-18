@@ -138,7 +138,18 @@ This lets you control the exact credit received per leg, which directly determin
 The `nifty_premium_straddle` strategy is registered in the existing `my_strategy` project under
 `demo_ws`.  No additional scaffold step is required.
 
-### Verify strategy is discoverable
+### Capital requirement
+
+Selling a Nifty short straddle (1 CE + 1 PE, naked) requires approximately **₹2.2 lac margin per leg**.
+
+| Legs | Margin per leg | Minimum capital | Recommended capital |
+|------|---------------|-----------------|---------------------|
+| 1 lot short straddle (qty=65) | ₹2.2 lac | ₹4.4 lac | ₹5.0 lac |
+
+Use `initial_capital = 500000` in `bt.toml` (or pass via CLI) for 1 lot.  Scale linearly for
+multiple lots.
+
+
 
 ```bash
 bt list-strategies \
@@ -224,6 +235,11 @@ if ctx.position_qty(state.pe_id) < 0 {
 ---
 
 ## Running a Single Backtest
+
+> **Capital note:** `initial_capital` is set in `bt.toml` (not a CLI flag).  The project is
+> configured with `initial_capital = 500000` (₹5 lac), which covers the ~₹4.4 lac margin
+> required to sell 1 lot (qty=65) of Nifty CE + PE naked.  Scale capital proportionally for
+> larger qty.
 
 ### Example 1 — Default parameters (11:00 entry, 15:15 exit, ₹100 CP, 20 % SL)
 

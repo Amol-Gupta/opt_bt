@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Backtest Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1, h2 { margin: 0 0 12px; }
+    .section { margin-top: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    .label { color: #666; font-size: 12px; margin-bottom: 4px; }
+    .value { font-size: 18px; font-weight: 600; }
+    .muted { color: #666; font-size: 12px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+    th { background: #f7f7f7; }
+    ul { margin: 8px 0 0 20px; }
+    .chart { border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #fff; }
+    #curves-plot { width: 100%; height: 560px; }
+  </style>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <h1>Backtest Report</h1>
+
+  <div class="section">
+    <h2>Summary Metrics</h2>
+    <div class="grid">
+      <div class="card"><div class="label">Starting Capital</div><div class="value">₹500000.00</div></div>
+      <div class="card"><div class="label">Profit</div><div class="value">-₹1511.25 (-0.30%)</div></div>
+      <div class="card"><div class="label">Max Drawdown</div><div class="value">-₹3084.01 (-0.62%)</div></div>
+      <div class="card"><div class="label">CAGR</div><div class="value">-1.29%</div></div>
+      <div class="card"><div class="label">Sharpe</div><div class="value">-4.23</div></div>
+      <div class="card"><div class="label">Sortino</div><div class="value">-6.37</div></div>
+      <div class="card"><div class="label">Fill Count</div><div class="value">139</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Portfolio View</h2>
+    <div class="grid">
+      <div class="card"><div class="label">Strategies</div><div class="value">1</div></div>
+      <div class="card"><div class="label">Total Realized PnL</div><div class="value">-1511.25</div></div>
+      <div class="card"><div class="label">Total Fees</div><div class="value">0.00</div></div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Strategy</th><th>Trades</th><th>Realized PnL</th><th>Fees</th><th>Gross Notional</th><th>PnL Contribution</th></tr>
+      </thead>
+      <tbody><tr><td>nifty_premium_straddle</td><td>139</td><td>-1511.25</td><td>0.00</td><td>895930.75</td><td>100.00%</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Strategy Parameters</h2>
+    <table>
+      <thead>
+        <tr><th>Strategy</th><th>Parameters</th></tr>
+      </thead>
+      <tbody><tr><td>nifty_premium_straddle</td><td>entry_seconds=39600, exit_seconds=54900, prob=0.5, qty=65, seed=42, sl_pct=0.30, target_premium=100</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Interactive Equity & Drawdown Curves</h2>
+    <div class="chart">
+      <div id="curves-plot"></div>
+    </div>
+    <div class="muted">Use mouse drag/wheel to zoom and pan. X axis is synchronized for both plots. Vertical cursor shows values from both plots.</div>
+    <div class="muted">Range: 2025-01-01 to 2025-03-28 | Equity points: 62 | Drawdown points: 62</div>
+  </div>
+
+  <div class="section">
+    <h2>Fills</h2>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Order</th><th>Strategy</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Fee</th><th>Time</th></tr>
+      </thead>
+      <tbody><tr><td>1</td><td>1735809300002</td><td>nifty_premium_straddle</td><td>NIFTY02JAN2524100CE</td><td>Sell</td><td>65</td><td>81.10</td><td>0.00</td><td>2025-01-02T09:15:00+00:00</td></tr><tr><td>2</td><td>1735809300003</td><td>nifty_premium_straddle</td><td>NIFTY02JAN2524300PE</td><td>Sell</td><td>65</td><td>121.95</td><td>0.00</td><td>2025-01-02T09:15:00+00:00</td></tr><tr><td>3</td><td>1735895700002</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2524150CE</td><td>Sell</td><td>65</td><td>95.85</td><td>0.00</td><td>2025-01-03T09:15:00+00:00</td></tr><tr><td>4</td><td>1735895700003</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523900PE</td><td>Sell</td><td>65</td><td>100.35</td><td>0.00</td><td>2025-01-03T09:15:00+00:00</td></tr><tr><td>5</td><td>1736154900002</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523850CE</td><td>Sell</td><td>65</td><td>92.85</td><td>0.00</td><td>2025-01-06T09:15:00+00:00</td></tr><tr><td>6</td><td>1736154900003</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523300PE</td><td>Sell</td><td>65</td><td>94.75</td><td>0.00</td><td>2025-01-06T09:15:00+00:00</td></tr><tr><td>7</td><td>1736241300002</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523750CE</td><td>Sell</td><td>65</td><td>95.70</td><td>0.00</td><td>2025-01-07T09:15:00+00:00</td></tr><tr><td>8</td><td>1736241300003</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523650PE</td><td>Sell</td><td>65</td><td>97.20</td><td>0.00</td><td>2025-01-07T09:15:00+00:00</td></tr><tr><td>9</td><td>1736327700002</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523650CE</td><td>Sell</td><td>65</td><td>110.55</td><td>0.00</td><td>2025-01-08T09:15:00+00:00</td></tr><tr><td>10</td><td>1736327700003</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523750PE</td><td>Sell</td><td>65</td><td>102.35</td><td>0.00</td><td>2025-01-08T09:15:00+00:00</td></tr><tr><td>11</td><td>1736414100002</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523400CE</td><td>Sell</td><td>65</td><td>116.40</td><td>0.00</td><td>2025-01-09T09:15:00+00:00</td></tr><tr><td>12</td><td>1736414100003</td><td>nifty_premium_straddle</td><td>NIFTY09JAN2523600PE</td><td>Sell</td><td>65</td><td>85.35</td><td>0.00</td><td>2025-01-09T09:15:00+00:00</td></tr><tr><td>13</td><td>1736500500002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523600CE</td><td>Sell</td><td>65</td><td>96.35</td><td>0.00</td><td>2025-01-10T09:15:00+00:00</td></tr><tr><td>14</td><td>1736500500003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523250PE</td><td>Sell</td><td>65</td><td>93.60</td><td>0.00</td><td>2025-01-10T09:15:00+00:00</td></tr><tr><td>15</td><td>1736759700002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523200CE</td><td>Sell</td><td>65</td><td>96.25</td><td>0.00</td><td>2025-01-13T09:15:00+00:00</td></tr><tr><td>16</td><td>1736759700003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523000PE</td><td>Sell</td><td>65</td><td>94.95</td><td>0.00</td><td>2025-01-13T09:15:00+00:00</td></tr><tr><td>17</td><td>1736846100003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523250PE</td><td>Buy</td><td>65</td><td>99.95</td><td>0.00</td><td>2025-01-14T09:15:00+00:00</td></tr><tr><td>18</td><td>1736846100002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523200CE</td><td>Buy</td><td>65</td><td>100.90</td><td>0.00</td><td>2025-01-14T09:15:00+00:00</td></tr><tr><td>19</td><td>1736846100002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523200CE</td><td>Sell</td><td>65</td><td>100.90</td><td>0.00</td><td>2025-01-14T09:15:00+00:00</td></tr><tr><td>20</td><td>1736846100003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523250PE</td><td>Sell</td><td>65</td><td>99.95</td><td>0.00</td><td>2025-01-14T09:15:00+00:00</td></tr><tr><td>21</td><td>1736932500002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523150CE</td><td>Sell</td><td>65</td><td>93.50</td><td>0.00</td><td>2025-01-15T09:15:00+00:00</td></tr><tr><td>22</td><td>1736932500003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523300PE</td><td>Sell</td><td>65</td><td>112.50</td><td>0.00</td><td>2025-01-15T09:15:00+00:00</td></tr><tr><td>23</td><td>1737018900002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523200CE</td><td>Buy</td><td>65</td><td>98.90</td><td>0.00</td><td>2025-01-16T09:15:00+00:00</td></tr><tr><td>24</td><td>1737018900002</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523200CE</td><td>Sell</td><td>65</td><td>98.90</td><td>0.00</td><td>2025-01-16T09:15:00+00:00</td></tr><tr><td>25</td><td>1737018900003</td><td>nifty_premium_straddle</td><td>NIFTY16JAN2523400PE</td><td>Sell</td><td>65</td><td>102.20</td><td>0.00</td><td>2025-01-16T09:15:00+00:00</td></tr><tr><td>26</td><td>1737105300002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523400CE</td><td>Sell</td><td>65</td><td>102.50</td><td>0.00</td><td>2025-01-17T09:15:00+00:00</td></tr><tr><td>27</td><td>1737105300003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523100PE</td><td>Sell</td><td>65</td><td>103.80</td><td>0.00</td><td>2025-01-17T09:15:00+00:00</td></tr><tr><td>28</td><td>1737364500002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523450CE</td><td>Sell</td><td>65</td><td>109.50</td><td>0.00</td><td>2025-01-20T09:15:00+00:00</td></tr><tr><td>29</td><td>1737364500003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523300PE</td><td>Sell</td><td>65</td><td>105.00</td><td>0.00</td><td>2025-01-20T09:15:00+00:00</td></tr><tr><td>30</td><td>1737450900002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523150CE</td><td>Sell</td><td>65</td><td>102.45</td><td>0.00</td><td>2025-01-21T09:15:00+00:00</td></tr><tr><td>31</td><td>1737450900003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2522950PE</td><td>Sell</td><td>65</td><td>105.30</td><td>0.00</td><td>2025-01-21T09:15:00+00:00</td></tr><tr><td>32</td><td>1737537300002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523100CE</td><td>Sell</td><td>65</td><td>91.05</td><td>0.00</td><td>2025-01-22T09:15:00+00:00</td></tr><tr><td>33</td><td>1737537300003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523200PE</td><td>Sell</td><td>65</td><td>99.70</td><td>0.00</td><td>2025-01-22T09:15:00+00:00</td></tr><tr><td>34</td><td>1737623700003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523300PE</td><td>Buy</td><td>65</td><td>79.20</td><td>0.00</td><td>2025-01-23T09:15:00+00:00</td></tr><tr><td>35</td><td>1737623700002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523100CE</td><td>Buy</td><td>65</td><td>121.60</td><td>0.00</td><td>2025-01-23T09:15:00+00:00</td></tr><tr><td>36</td><td>1737623700002</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523100CE</td><td>Sell</td><td>65</td><td>121.60</td><td>0.00</td><td>2025-01-23T09:15:00+00:00</td></tr><tr><td>37</td><td>1737623700003</td><td>nifty_premium_straddle</td><td>NIFTY23JAN2523300PE</td><td>Sell</td><td>65</td><td>79.20</td><td>0.00</td><td>2025-01-23T09:15:00+00:00</td></tr><tr><td>38</td><td>1737710100002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523250CE</td><td>Sell</td><td>65</td><td>108.35</td><td>0.00</td><td>2025-01-24T09:15:00+00:00</td></tr><tr><td>39</td><td>1737710100003</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2522900PE</td><td>Sell</td><td>65</td><td>95.60</td><td>0.00</td><td>2025-01-24T09:15:00+00:00</td></tr><tr><td>40</td><td>1737969300002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2522950CE</td><td>Sell</td><td>65</td><td>102.90</td><td>0.00</td><td>2025-01-27T09:15:00+00:00</td></tr><tr><td>41</td><td>1737969300003</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2522700PE</td><td>Sell</td><td>65</td><td>104.25</td><td>0.00</td><td>2025-01-27T09:15:00+00:00</td></tr><tr><td>42</td><td>1738055700002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523250CE</td><td>Buy</td><td>65</td><td>91.35</td><td>0.00</td><td>2025-01-28T09:15:00+00:00</td></tr><tr><td>43</td><td>1738055700002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523250CE</td><td>Sell</td><td>65</td><td>91.35</td><td>0.00</td><td>2025-01-28T09:15:00+00:00</td></tr><tr><td>44</td><td>1738055700003</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523050PE</td><td>Sell</td><td>65</td><td>98.05</td><td>0.00</td><td>2025-01-28T09:15:00+00:00</td></tr><tr><td>45</td><td>1738142100002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523050PE</td><td>Buy</td><td>65</td><td>105.00</td><td>0.00</td><td>2025-01-29T09:15:00+00:00</td></tr><tr><td>46</td><td>1738142100002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523200CE</td><td>Sell</td><td>65</td><td>110.50</td><td>0.00</td><td>2025-01-29T09:15:00+00:00</td></tr><tr><td>47</td><td>1738142100003</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523050PE</td><td>Sell</td><td>65</td><td>105.00</td><td>0.00</td><td>2025-01-29T09:15:00+00:00</td></tr><tr><td>48</td><td>1738228500002</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523100CE</td><td>Sell</td><td>65</td><td>82.55</td><td>0.00</td><td>2025-01-30T09:15:00+00:00</td></tr><tr><td>49</td><td>1738228500003</td><td>nifty_premium_straddle</td><td>NIFTY30JAN2523250PE</td><td>Sell</td><td>65</td><td>81.80</td><td>0.00</td><td>2025-01-30T09:15:00+00:00</td></tr><tr><td>50</td><td>1738314900002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523900CE</td><td>Sell</td><td>65</td><td>103.30</td><td>0.00</td><td>2025-01-31T09:15:00+00:00</td></tr><tr><td>51</td><td>1738314900003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523100PE</td><td>Sell</td><td>65</td><td>104.50</td><td>0.00</td><td>2025-01-31T09:15:00+00:00</td></tr><tr><td>52</td><td>1738401300002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523600CE</td><td>Sell</td><td>65</td><td>109.05</td><td>0.00</td><td>2025-02-01T09:15:00+00:00</td></tr><tr><td>53</td><td>1738401300003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523350PE</td><td>Sell</td><td>65</td><td>94.00</td><td>0.00</td><td>2025-02-01T09:15:00+00:00</td></tr><tr><td>54</td><td>1738574100002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523350PE</td><td>Buy</td><td>65</td><td>105.80</td><td>0.00</td><td>2025-02-03T09:15:00+00:00</td></tr><tr><td>55</td><td>1738574100002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523400CE</td><td>Sell</td><td>65</td><td>100.15</td><td>0.00</td><td>2025-02-03T09:15:00+00:00</td></tr><tr><td>56</td><td>1738574100003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523350PE</td><td>Sell</td><td>65</td><td>105.80</td><td>0.00</td><td>2025-02-03T09:15:00+00:00</td></tr><tr><td>57</td><td>1738660500002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523700CE</td><td>Sell</td><td>65</td><td>91.10</td><td>0.00</td><td>2025-02-04T09:15:00+00:00</td></tr><tr><td>58</td><td>1738660500003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523700PE</td><td>Sell</td><td>65</td><td>108.40</td><td>0.00</td><td>2025-02-04T09:15:00+00:00</td></tr><tr><td>59</td><td>1738746900002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523650CE</td><td>Sell</td><td>65</td><td>104.55</td><td>0.00</td><td>2025-02-05T09:15:00+00:00</td></tr><tr><td>60</td><td>1738746900003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523750PE</td><td>Sell</td><td>65</td><td>89.80</td><td>0.00</td><td>2025-02-05T09:15:00+00:00</td></tr><tr><td>61</td><td>1738833300002</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523450CE</td><td>Sell</td><td>65</td><td>120.20</td><td>0.00</td><td>2025-02-06T09:15:00+00:00</td></tr><tr><td>62</td><td>1738833300003</td><td>nifty_premium_straddle</td><td>NIFTY06FEB2523650PE</td><td>Sell</td><td>65</td><td>81.20</td><td>0.00</td><td>2025-02-06T09:15:00+00:00</td></tr><tr><td>63</td><td>1738919700002</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523600CE</td><td>Sell</td><td>65</td><td>104.65</td><td>0.00</td><td>2025-02-07T09:15:00+00:00</td></tr><tr><td>64</td><td>1738919700003</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523350PE</td><td>Sell</td><td>65</td><td>98.75</td><td>0.00</td><td>2025-02-07T09:15:00+00:00</td></tr><tr><td>65</td><td>1739178900002</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523500CE</td><td>Sell</td><td>65</td><td>98.15</td><td>0.00</td><td>2025-02-10T09:15:00+00:00</td></tr><tr><td>66</td><td>1739178900003</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523300PE</td><td>Sell</td><td>65</td><td>91.50</td><td>0.00</td><td>2025-02-10T09:15:00+00:00</td></tr><tr><td>67</td><td>1739265300002</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523100CE</td><td>Sell</td><td>65</td><td>102.50</td><td>0.00</td><td>2025-02-11T09:15:00+00:00</td></tr><tr><td>68</td><td>1739265300003</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523000PE</td><td>Sell</td><td>65</td><td>88.80</td><td>0.00</td><td>2025-02-11T09:15:00+00:00</td></tr><tr><td>69</td><td>1739351700002</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523000CE</td><td>Sell</td><td>65</td><td>105.50</td><td>0.00</td><td>2025-02-12T09:15:00+00:00</td></tr><tr><td>70</td><td>1739351700003</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523050PE</td><td>Sell</td><td>65</td><td>111.90</td><td>0.00</td><td>2025-02-12T09:15:00+00:00</td></tr><tr><td>71</td><td>1739438100002</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2522950CE</td><td>Sell</td><td>65</td><td>77.00</td><td>0.00</td><td>2025-02-13T09:15:00+00:00</td></tr><tr><td>72</td><td>1739438100003</td><td>nifty_premium_straddle</td><td>NIFTY13FEB2523100PE</td><td>Sell</td><td>65</td><td>79.40</td><td>0.00</td><td>2025-02-13T09:15:00+00:00</td></tr><tr><td>73</td><td>1739524500002</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2523200CE</td><td>Sell</td><td>65</td><td>92.60</td><td>0.00</td><td>2025-02-14T09:15:00+00:00</td></tr><tr><td>74</td><td>1739524500003</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522850PE</td><td>Sell</td><td>65</td><td>105.95</td><td>0.00</td><td>2025-02-14T09:15:00+00:00</td></tr><tr><td>75</td><td>1739783700002</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2523100CE</td><td>Sell</td><td>65</td><td>93.70</td><td>0.00</td><td>2025-02-17T09:15:00+00:00</td></tr><tr><td>76</td><td>1739783700003</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522800PE</td><td>Sell</td><td>65</td><td>91.55</td><td>0.00</td><td>2025-02-17T09:15:00+00:00</td></tr><tr><td>77</td><td>1739870100002</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2523000CE</td><td>Sell</td><td>65</td><td>101.15</td><td>0.00</td><td>2025-02-18T09:15:00+00:00</td></tr><tr><td>78</td><td>1739870100003</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522900PE</td><td>Sell</td><td>65</td><td>91.60</td><td>0.00</td><td>2025-02-18T09:15:00+00:00</td></tr><tr><td>79</td><td>1739956500002</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522900CE</td><td>Sell</td><td>65</td><td>85.55</td><td>0.00</td><td>2025-02-19T09:15:00+00:00</td></tr><tr><td>80</td><td>1739956500003</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522950PE</td><td>Sell</td><td>65</td><td>111.20</td><td>0.00</td><td>2025-02-19T09:15:00+00:00</td></tr><tr><td>81</td><td>1740042900002</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2522800CE</td><td>Sell</td><td>65</td><td>107.20</td><td>0.00</td><td>2025-02-20T09:15:00+00:00</td></tr><tr><td>82</td><td>1740042900003</td><td>nifty_premium_straddle</td><td>NIFTY20FEB2523000PE</td><td>Sell</td><td>65</td><td>94.70</td><td>0.00</td><td>2025-02-20T09:15:00+00:00</td></tr><tr><td>83</td><td>1740129300002</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522950CE</td><td>Sell</td><td>65</td><td>90.35</td><td>0.00</td><td>2025-02-21T09:15:00+00:00</td></tr><tr><td>84</td><td>1740129300003</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522750PE</td><td>Sell</td><td>65</td><td>106.00</td><td>0.00</td><td>2025-02-21T09:15:00+00:00</td></tr><tr><td>85</td><td>1740388500002</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522650CE</td><td>Sell</td><td>65</td><td>93.00</td><td>0.00</td><td>2025-02-24T09:15:00+00:00</td></tr><tr><td>86</td><td>1740388500003</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522650PE</td><td>Sell</td><td>65</td><td>102.15</td><td>0.00</td><td>2025-02-24T09:15:00+00:00</td></tr><tr><td>87</td><td>1740474900002</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522550CE</td><td>Sell</td><td>65</td><td>91.25</td><td>0.00</td><td>2025-02-25T09:15:00+00:00</td></tr><tr><td>88</td><td>1740474900003</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522700PE</td><td>Sell</td><td>65</td><td>110.70</td><td>0.00</td><td>2025-02-25T09:15:00+00:00</td></tr><tr><td>89</td><td>1740647700002</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522650PE</td><td>Buy</td><td>65</td><td>99.30</td><td>0.00</td><td>2025-02-27T09:15:00+00:00</td></tr><tr><td>90</td><td>1740647700002</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522450CE</td><td>Sell</td><td>65</td><td>101.30</td><td>0.00</td><td>2025-02-27T09:15:00+00:00</td></tr><tr><td>91</td><td>1740647700003</td><td>nifty_premium_straddle</td><td>NIFTY27FEB2522650PE</td><td>Sell</td><td>65</td><td>99.30</td><td>0.00</td><td>2025-02-27T09:15:00+00:00</td></tr><tr><td>92</td><td>1740734100002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522300CE</td><td>Sell</td><td>65</td><td>101.65</td><td>0.00</td><td>2025-02-28T09:15:00+00:00</td></tr><tr><td>93</td><td>1740734100003</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522100PE</td><td>Sell</td><td>65</td><td>102.05</td><td>0.00</td><td>2025-02-28T09:15:00+00:00</td></tr><tr><td>94</td><td>1740993300002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522100PE</td><td>Buy</td><td>65</td><td>91.25</td><td>0.00</td><td>2025-03-03T09:15:00+00:00</td></tr><tr><td>95</td><td>1740993300002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522200CE</td><td>Sell</td><td>65</td><td>96.40</td><td>0.00</td><td>2025-03-03T09:15:00+00:00</td></tr><tr><td>96</td><td>1740993300003</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522100PE</td><td>Sell</td><td>65</td><td>91.25</td><td>0.00</td><td>2025-03-03T09:15:00+00:00</td></tr><tr><td>97</td><td>1741079700002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522100PE</td><td>Buy</td><td>65</td><td>105.20</td><td>0.00</td><td>2025-03-04T09:15:00+00:00</td></tr><tr><td>98</td><td>1741079700002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522050CE</td><td>Sell</td><td>65</td><td>109.75</td><td>0.00</td><td>2025-03-04T09:15:00+00:00</td></tr><tr><td>99</td><td>1741079700003</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522100PE</td><td>Sell</td><td>65</td><td>105.20</td><td>0.00</td><td>2025-03-04T09:15:00+00:00</td></tr><tr><td>100</td><td>1741166100002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522300CE</td><td>Buy</td><td>65</td><td>96.10</td><td>0.00</td><td>2025-03-05T09:15:00+00:00</td></tr><tr><td>101</td><td>1741166100002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522300CE</td><td>Sell</td><td>65</td><td>96.10</td><td>0.00</td><td>2025-03-05T09:15:00+00:00</td></tr><tr><td>102</td><td>1741166100003</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522400PE</td><td>Sell</td><td>65</td><td>109.05</td><td>0.00</td><td>2025-03-05T09:15:00+00:00</td></tr><tr><td>103</td><td>1741252500002</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522450CE</td><td>Sell</td><td>65</td><td>88.85</td><td>0.00</td><td>2025-03-06T09:15:00+00:00</td></tr><tr><td>104</td><td>1741252500003</td><td>nifty_premium_straddle</td><td>NIFTY06MAR2522650PE</td><td>Sell</td><td>65</td><td>113.85</td><td>0.00</td><td>2025-03-06T09:15:00+00:00</td></tr><tr><td>105</td><td>1741338900002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522700CE</td><td>Sell</td><td>65</td><td>95.00</td><td>0.00</td><td>2025-03-07T09:15:00+00:00</td></tr><tr><td>106</td><td>1741338900003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Sell</td><td>65</td><td>91.65</td><td>0.00</td><td>2025-03-07T09:15:00+00:00</td></tr><tr><td>107</td><td>1741598100002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500CE</td><td>Sell</td><td>65</td><td>95.00</td><td>0.00</td><td>2025-03-10T09:15:00+00:00</td></tr><tr><td>108</td><td>1741598100003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522400PE</td><td>Sell</td><td>65</td><td>105.60</td><td>0.00</td><td>2025-03-10T09:15:00+00:00</td></tr><tr><td>109</td><td>1741684500003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Buy</td><td>65</td><td>109.00</td><td>0.00</td><td>2025-03-11T09:15:00+00:00</td></tr><tr><td>110</td><td>1741684500002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500CE</td><td>Buy</td><td>65</td><td>98.15</td><td>0.00</td><td>2025-03-11T09:15:00+00:00</td></tr><tr><td>111</td><td>1741684500002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500CE</td><td>Sell</td><td>65</td><td>98.15</td><td>0.00</td><td>2025-03-11T09:15:00+00:00</td></tr><tr><td>112</td><td>1741684500003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Sell</td><td>65</td><td>109.00</td><td>0.00</td><td>2025-03-11T09:15:00+00:00</td></tr><tr><td>113</td><td>1741770900002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Buy</td><td>65</td><td>93.70</td><td>0.00</td><td>2025-03-12T09:15:00+00:00</td></tr><tr><td>114</td><td>1741770900002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522400CE</td><td>Sell</td><td>65</td><td>98.05</td><td>0.00</td><td>2025-03-12T09:15:00+00:00</td></tr><tr><td>115</td><td>1741770900003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Sell</td><td>65</td><td>93.70</td><td>0.00</td><td>2025-03-12T09:15:00+00:00</td></tr><tr><td>116</td><td>1741857300002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Buy</td><td>65</td><td>95.00</td><td>0.00</td><td>2025-03-13T09:15:00+00:00</td></tr><tr><td>117</td><td>1741857300002</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522300CE</td><td>Sell</td><td>65</td><td>106.35</td><td>0.00</td><td>2025-03-13T09:15:00+00:00</td></tr><tr><td>118</td><td>1741857300003</td><td>nifty_premium_straddle</td><td>NIFTY13MAR2522500PE</td><td>Sell</td><td>65</td><td>95.00</td><td>0.00</td><td>2025-03-13T09:15:00+00:00</td></tr><tr><td>119</td><td>1742202900002</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2522550CE</td><td>Sell</td><td>65</td><td>94.60</td><td>0.00</td><td>2025-03-17T09:15:00+00:00</td></tr><tr><td>120</td><td>1742202900003</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2522500PE</td><td>Sell</td><td>65</td><td>106.70</td><td>0.00</td><td>2025-03-17T09:15:00+00:00</td></tr><tr><td>121</td><td>1742289300002</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2522800CE</td><td>Sell</td><td>65</td><td>98.10</td><td>0.00</td><td>2025-03-18T09:15:00+00:00</td></tr><tr><td>122</td><td>1742289300003</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2522800PE</td><td>Sell</td><td>65</td><td>90.50</td><td>0.00</td><td>2025-03-18T09:15:00+00:00</td></tr><tr><td>123</td><td>1742375700002</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2522900CE</td><td>Sell</td><td>65</td><td>99.65</td><td>0.00</td><td>2025-03-19T09:15:00+00:00</td></tr><tr><td>124</td><td>1742375700003</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2523000PE</td><td>Sell</td><td>65</td><td>111.40</td><td>0.00</td><td>2025-03-19T09:15:00+00:00</td></tr><tr><td>125</td><td>1742462100002</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2523100CE</td><td>Sell</td><td>65</td><td>104.50</td><td>0.00</td><td>2025-03-20T09:15:00+00:00</td></tr><tr><td>126</td><td>1742462100003</td><td>nifty_premium_straddle</td><td>NIFTY20MAR2523300PE</td><td>Sell</td><td>65</td><td>97.45</td><td>0.00</td><td>2025-03-20T09:15:00+00:00</td></tr><tr><td>127</td><td>1742548500002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523450CE</td><td>Sell</td><td>65</td><td>97.75</td><td>0.00</td><td>2025-03-21T09:15:00+00:00</td></tr><tr><td>128</td><td>1742548500003</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523300PE</td><td>Sell</td><td>65</td><td>94.15</td><td>0.00</td><td>2025-03-21T09:15:00+00:00</td></tr><tr><td>129</td><td>1742807700002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523800CE</td><td>Sell</td><td>65</td><td>89.80</td><td>0.00</td><td>2025-03-24T09:15:00+00:00</td></tr><tr><td>130</td><td>1742807700003</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523650PE</td><td>Sell</td><td>65</td><td>106.20</td><td>0.00</td><td>2025-03-24T09:15:00+00:00</td></tr><tr><td>131</td><td>1742894100002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523750CE</td><td>Sell</td><td>65</td><td>97.60</td><td>0.00</td><td>2025-03-25T09:15:00+00:00</td></tr><tr><td>132</td><td>1742894100003</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523700PE</td><td>Sell</td><td>65</td><td>90.90</td><td>0.00</td><td>2025-03-25T09:15:00+00:00</td></tr><tr><td>133</td><td>1742980500002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523550CE</td><td>Sell</td><td>65</td><td>89.65</td><td>0.00</td><td>2025-03-26T09:15:00+00:00</td></tr><tr><td>134</td><td>1742980500003</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523600PE</td><td>Sell</td><td>65</td><td>100.70</td><td>0.00</td><td>2025-03-26T09:15:00+00:00</td></tr><tr><td>135</td><td>1743066900002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523700PE</td><td>Buy</td><td>65</td><td>97.40</td><td>0.00</td><td>2025-03-27T09:15:00+00:00</td></tr><tr><td>136</td><td>1743066900002</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523500CE</td><td>Sell</td><td>65</td><td>104.80</td><td>0.00</td><td>2025-03-27T09:15:00+00:00</td></tr><tr><td>137</td><td>1743066900003</td><td>nifty_premium_straddle</td><td>NIFTY27MAR2523700PE</td><td>Sell</td><td>65</td><td>97.40</td><td>0.00</td><td>2025-03-27T09:15:00+00:00</td></tr><tr><td>138</td><td>1743153300002</td><td>nifty_premium_straddle</td><td>NIFTY03APR2523650CE</td><td>Sell</td><td>65</td><td>93.00</td><td>0.00</td><td>2025-03-28T09:15:00+00:00</td></tr><tr><td>139</td><td>1743153300003</td><td>nifty_premium_straddle</td><td>NIFTY03APR2523550PE</td><td>Sell</td><td>65</td><td>105.85</td><td>0.00</td><td>2025-03-28T09:15:00+00:00</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Warnings</h2>
+    <ul></ul>
+  </div>
+
+  <script>
+    (() => {
+      const hasCurveData = true;
+      if (!hasCurveData || typeof Plotly === "undefined") {
+        const plotDiv = document.getElementById("curves-plot");
+        if (plotDiv) {
+          plotDiv.innerHTML = '<div class="muted">Interactive plot unavailable: no daily curve data or Plotly failed to load.</div>';
+        }
+        return;
+      }
+
+      const equityDates = ["2025-01-01","2025-01-02","2025-01-03","2025-01-06","2025-01-07","2025-01-08","2025-01-09","2025-01-10","2025-01-13","2025-01-14","2025-01-15","2025-01-16","2025-01-17","2025-01-20","2025-01-21","2025-01-22","2025-01-23","2025-01-24","2025-01-27","2025-01-28","2025-01-29","2025-01-30","2025-01-31","2025-02-01","2025-02-03","2025-02-04","2025-02-05","2025-02-06","2025-02-07","2025-02-10","2025-02-11","2025-02-12","2025-02-13","2025-02-14","2025-02-17","2025-02-18","2025-02-19","2025-02-20","2025-02-21","2025-02-24","2025-02-25","2025-02-27","2025-02-28","2025-03-03","2025-03-04","2025-03-05","2025-03-06","2025-03-07","2025-03-10","2025-03-11","2025-03-12","2025-03-13","2025-03-17","2025-03-18","2025-03-19","2025-03-20","2025-03-21","2025-03-24","2025-03-25","2025-03-26","2025-03-27","2025-03-28"];
+      const equityValues = [500000.0,500217.75,499743.25,489496.0,504533.75,515411.5,504842.5,506009.25,504390.75,514576.25,520042.75,526204.75,526565.5,529422.25,528691.0,548815.0,562868.0,563784.5,562023.0,562910.25,556501.25,581367.0,582416.75,592690.0,596538.0,582332.25,591100.75,611052.5,611052.5,612934.25,599905.0,606057.25,622196.75,622993.0,625453.25,632684.5,643929.5,669351.0,669367.25,669087.75,674515.25,678148.75,678392.5,682425.75,685620.5,665516.0,641628.5,642073.75,643208.0,647481.75,654423.75,666565.75,666559.25,656178.75,653660.0,619795.0,620649.75,609921.5,616431.25,622976.75,647189.25,647748.25];
+      const drawdownDates = ["2025-01-01","2025-01-02","2025-01-03","2025-01-06","2025-01-07","2025-01-08","2025-01-09","2025-01-10","2025-01-13","2025-01-14","2025-01-15","2025-01-16","2025-01-17","2025-01-20","2025-01-21","2025-01-22","2025-01-23","2025-01-24","2025-01-27","2025-01-28","2025-01-29","2025-01-30","2025-01-31","2025-02-01","2025-02-03","2025-02-04","2025-02-05","2025-02-06","2025-02-07","2025-02-10","2025-02-11","2025-02-12","2025-02-13","2025-02-14","2025-02-17","2025-02-18","2025-02-19","2025-02-20","2025-02-21","2025-02-24","2025-02-25","2025-02-27","2025-02-28","2025-03-03","2025-03-04","2025-03-05","2025-03-06","2025-03-07","2025-03-10","2025-03-11","2025-03-12","2025-03-13","2025-03-17","2025-03-18","2025-03-19","2025-03-20","2025-03-21","2025-03-24","2025-03-25","2025-03-26","2025-03-27","2025-03-28"];
+      const drawdownValues = [0.0,0.0,-0.09485868904092268,-2.1434165420959173,0.0,0.0,-2.050594524957243,-1.8242220051357023,-2.1382429379243577,-0.16205497937085225,0.0,0.0,0.0,0.0,-0.13812226441181874,0.0,0.0,0.0,-0.3124420767154826,-0.15506811556543323,-1.2918499887811743,0.0,0.0,0.0,0.0,-2.3813654788127496,-0.9114675008130244,0.0,0.0,0.0,-2.125717399541631,-1.1219800492467176,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-0.0417558522619683,0.0,0.0,0.0,0.0,0.0,-2.932307304113573,-6.416377573307683,-6.351436399582568,-6.186002314691582,-5.562661851563656,-4.550148369250919,-2.779197821535383,-2.7801458678671365,-4.294175859677474,-4.6615438132319555,-9.600865201667688,-9.476197109042102,-11.040947579601252,-10.091479178350122,-9.136796522274349,-5.605323936492565,-5.523791951961763];
+
+      const equityTrace = {
+        type: "scatter",
+        mode: "lines",
+        name: "Equity (₹)",
+        x: equityDates,
+        y: equityValues,
+        line: { color: "#2d7ef7", width: 2 },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "Date: %{x}<br>Equity: ₹%{y:,.2f}<extra></extra>",
+      };
+
+      const drawdownTrace = {
+        type: "scatter",
+        mode: "lines",
+        name: "Drawdown (%)",
+        x: drawdownDates,
+        y: drawdownValues,
+        line: { color: "#d64545", width: 2 },
+        xaxis: "x2",
+        yaxis: "y2",
+        hovertemplate: "Date: %{x}<br>Drawdown: %{y:.2f}%<extra></extra>",
+      };
+
+      const layout = {
+        grid: { rows: 2, columns: 1, pattern: "independent", roworder: "top to bottom" },
+        margin: { l: 70, r: 24, t: 20, b: 56 },
+        legend: { orientation: "h", y: 1.08 },
+        hovermode: "x unified",
+        xaxis: {
+          title: "Date",
+          type: "date",
+          showgrid: true,
+          tickformat: "%Y-%m-%d",
+          showspikes: true,
+          spikemode: "across",
+          spikesnap: "cursor",
+          spikethickness: 1,
+          spikecolor: "#666"
+        },
+        yaxis: {
+          title: "Equity (₹)",
+          showgrid: true,
+          tickformat: ",.2f"
+        },
+        xaxis2: {
+          title: "Date",
+          type: "date",
+          matches: "x",
+          showgrid: true,
+          tickformat: "%Y-%m-%d",
+          showspikes: true,
+          spikemode: "across",
+          spikesnap: "cursor",
+          spikethickness: 1,
+          spikecolor: "#666"
+        },
+        yaxis2: {
+          title: "Drawdown (%)",
+          showgrid: true,
+          ticksuffix: "%",
+          tickformat: ".2f"
+        }
+      };
+
+      const config = {
+        responsive: true,
+        displaylogo: false,
+        scrollZoom: true
+      };
+
+      Plotly.newPlot("curves-plot", [equityTrace, drawdownTrace], layout, config);
+    })();
+  </script>
+</body>
+</html>

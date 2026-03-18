@@ -18,19 +18,22 @@ cd opt_bt
 
 ### 2. Install Pre-commit Hooks (Recommended)
 
-Pre-commit hooks enforce formatting and linting standards locally before you push to GitHub:
+The repo ships a versioned hook in `.githooks/`. Activate it once per clone:
 
 ```bash
-./scripts/setup-hooks.sh
+git config core.hooksPath .githooks
 ```
 
-This installs a pre-commit hook that runs:
-- `cargo fmt --check` (formatting check)
+The pre-commit hook runs three checks before every commit:
+- `cargo fmt --check` (formatting)
 - `cargo clippy -- -D warnings` (linting)
+- `cargo test --lib` (unit tests)
 
-If a commit fails the checks:
-- **Formatting**: Run `cargo fmt` to auto-fix, then retry the commit.
-- **Clippy warnings**: Fix the warnings or use `git commit --no-verify` to skip (not recommended).
+If a commit fails:
+- **Formatting**: Run `cargo fmt` to auto-fix, then retry.
+- **Clippy warnings**: Fix the warnings shown.
+- **Tests**: Fix the failing tests before committing.
+- To bypass in an emergency: `git commit --no-verify` (not recommended).
 
 ### 3. Build and Test
 

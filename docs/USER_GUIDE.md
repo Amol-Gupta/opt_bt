@@ -598,3 +598,4 @@ The HTML file is self-contained (no external dependencies) and includes:
 - `start_date` and `end_date` are date boundaries (`YYYY-MM-DD`); intraday entry/exit time (for example 10:00/11:00) is defined inside strategy logic.
 - For fixture preparation details, see `sample_data/README.md`.
 - For feature planning artifacts, see `specs/001-options-backtest-engine/`.
+- For the strategy authoring API (orders, alarms, option chain search, rejection events), see [Strategy API Reference](STRATEGY_API.md).

@@ -674,11 +674,12 @@ mod tests {
 
         let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1_000);
         assert_eq!(order_id, 0);
-        assert!(ctx.event_buffer.is_empty());
+        assert!(!ctx.event_buffer.is_empty());
+        assert!(matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("allocator rejected")));
         assert!(ctx
             .warnings
             .iter()
-            .any(|w| w.contains("allocator rejected order")));
+            .any(|w| w.contains("allocator rejected")));
     }
 
     #[test]
@@ -760,7 +761,8 @@ mod tests {
 
         let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1);
         assert_eq!(order_id, 0);
-        assert!(ctx.event_buffer.is_empty());
+        assert!(!ctx.event_buffer.is_empty());
+        assert!(matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("insufficient capital")));
         assert!(ctx
             .warnings
             .iter()

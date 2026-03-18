@@ -233,7 +233,8 @@ impl<S: Strategy> Engine<S> {
     }
 
     fn handle_cancel_order_event(&mut self, event: &CancelOrderEvent) {
-        self.pending_orders.retain(|order| order.order_id != event.order_id);
+        self.pending_orders
+            .retain(|order| order.order_id != event.order_id);
     }
 
     fn handle_order_rejection_event(&mut self, event: &OrderRejectionEvent) {

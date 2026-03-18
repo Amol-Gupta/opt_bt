@@ -1,5 +1,7 @@
 use crate::common::context::Context;
-use crate::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent};
+use crate::common::event::{
+    AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent,
+};
 use crate::strategy::Strategy;
 use std::collections::HashMap;
 

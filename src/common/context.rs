@@ -1,4 +1,6 @@
-use crate::common::event::{AlarmEvent, CancelOrderEvent, Event, FillEvent, OrderEvent, OrderRejectionEvent};
+use crate::common::event::{
+    AlarmEvent, CancelOrderEvent, Event, FillEvent, OrderEvent, OrderRejectionEvent,
+};
 use crate::common::types::{InstrumentId, OrderType, Side};
 use crate::data::models::Bar;
 use crate::data::view::MarketDataView;
@@ -300,15 +302,16 @@ impl Context {
                 "rejected order: {} strategy_id='{}' instrument_id={}",
                 reason, self.active_strategy_id, instrument_id
             ));
-            self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
-                timestamp,
-                instrument_id,
-                order_type,
-                side,
-                quantity,
-                reason,
-                strategy_id: self.active_strategy_id.clone(),
-            }));
+            self.event_buffer
+                .push(Event::OrderRejection(OrderRejectionEvent {
+                    timestamp,
+                    instrument_id,
+                    order_type,
+                    side,
+                    quantity,
+                    reason,
+                    strategy_id: self.active_strategy_id.clone(),
+                }));
             return 0;
         }
 
@@ -323,15 +326,16 @@ impl Context {
                     "rejected order: {} strategy_id='{}' instrument_id={}",
                     reason, self.active_strategy_id, instrument_id
                 ));
-                self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
-                    timestamp,
-                    instrument_id,
-                    order_type,
-                    side,
-                    quantity,
-                    reason,
-                    strategy_id: self.active_strategy_id.clone(),
-                }));
+                self.event_buffer
+                    .push(Event::OrderRejection(OrderRejectionEvent {
+                        timestamp,
+                        instrument_id,
+                        order_type,
+                        side,
+                        quantity,
+                        reason,
+                        strategy_id: self.active_strategy_id.clone(),
+                    }));
                 return 0;
             }
         }
@@ -357,15 +361,16 @@ impl Context {
                     "rejected order: {} strategy_id='{}' instrument_id={}",
                     reason, self.active_strategy_id, instrument_id
                 ));
-                self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
-                    timestamp,
-                    instrument_id,
-                    order_type,
-                    side,
-                    quantity,
-                    reason,
-                    strategy_id: self.active_strategy_id.clone(),
-                }));
+                self.event_buffer
+                    .push(Event::OrderRejection(OrderRejectionEvent {
+                        timestamp,
+                        instrument_id,
+                        order_type,
+                        side,
+                        quantity,
+                        reason,
+                        strategy_id: self.active_strategy_id.clone(),
+                    }));
                 return 0;
             }
         }
@@ -386,15 +391,16 @@ impl Context {
                         "rejected order: {} strategy_id='{}' instrument_id={}",
                         reason, self.active_strategy_id, instrument_id
                     ));
-                    self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
-                        timestamp,
-                        instrument_id,
-                        order_type,
-                        side,
-                        quantity,
-                        reason,
-                        strategy_id: self.active_strategy_id.clone(),
-                    }));
+                    self.event_buffer
+                        .push(Event::OrderRejection(OrderRejectionEvent {
+                            timestamp,
+                            instrument_id,
+                            order_type,
+                            side,
+                            quantity,
+                            reason,
+                            strategy_id: self.active_strategy_id.clone(),
+                        }));
                     return 0;
                 }
             }
@@ -488,11 +494,7 @@ impl Context {
         self.schedule_alarm_at(scheduled_for, key)
     }
 
-    pub fn schedule_alarm_at(
-        &mut self,
-        timestamp: i64,
-        key: impl Into<String>,
-    ) -> AlarmHandle {
+    pub fn schedule_alarm_at(&mut self, timestamp: i64, key: impl Into<String>) -> AlarmHandle {
         let key = key.into();
         let alarm_id = self.next_alarm_id;
         self.next_alarm_id = self.next_alarm_id.saturating_add(1);
@@ -675,7 +677,9 @@ mod tests {
         let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1_000);
         assert_eq!(order_id, 0);
         assert!(!ctx.event_buffer.is_empty());
-        assert!(matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("allocator rejected")));
+        assert!(
+            matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("allocator rejected"))
+        );
         assert!(ctx
             .warnings
             .iter()
@@ -762,7 +766,9 @@ mod tests {
         let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1);
         assert_eq!(order_id, 0);
         assert!(!ctx.event_buffer.is_empty());
-        assert!(matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("insufficient capital")));
+        assert!(
+            matches!(&ctx.event_buffer[0], Event::OrderRejection(e) if e.reason.contains("insufficient capital"))
+        );
         assert!(ctx
             .warnings
             .iter()
@@ -899,8 +905,7 @@ mod tests {
             100,
         );
         assert_eq!(
-            result,
-            0,
+            result, 0,
             "BUY stop should be rejected when bar.high >= stop_price"
         );
         // Verify rejection event was added to buffer
@@ -928,8 +933,7 @@ mod tests {
             100,
         );
         assert_eq!(
-            result,
-            0,
+            result, 0,
             "SELL stop should be rejected when bar.low <= stop_price"
         );
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
@@ -967,13 +971,7 @@ mod tests {
         ctx.set_strategy_id("test_strategy");
 
         // Test 1: Zero quantity
-        let result = ctx.place_order_at(
-            instrument_id,
-            Side::Buy,
-            OrderType::Market,
-            0,
-            100,
-        );
+        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 0, 100);
         assert_eq!(result, 0, "Order with zero quantity should be rejected");
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
         if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
@@ -988,13 +986,7 @@ mod tests {
 
         // Test 2: Negative quantity
         ctx.event_buffer.clear();
-        let result = ctx.place_order_at(
-            instrument_id,
-            Side::Sell,
-            OrderType::Market,
-            -5,
-            100,
-        );
+        let result = ctx.place_order_at(instrument_id, Side::Sell, OrderType::Market, -5, 100);
         assert_eq!(result, 0, "Order with negative quantity should be rejected");
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
         if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
@@ -1035,14 +1027,11 @@ mod tests {
 
         // Try to place an order that requires more capital than available
         // Buying 100 units at ~100 each = 10000 * PRICE_SCALE capital needed
-        let result = ctx.place_order_at(
-            instrument_id,
-            Side::Buy,
-            OrderType::Market,
-            100,
-            100,
+        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 100, 100);
+        assert_eq!(
+            result, 0,
+            "Order should be rejected for insufficient capital"
         );
-        assert_eq!(result, 0, "Order should be rejected for insufficient capital");
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
         if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
             assert!(

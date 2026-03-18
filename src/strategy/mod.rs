@@ -8,7 +8,9 @@ pub mod portfolio;
 pub use portfolio::PortfolioStrategy;
 
 use crate::common::context::Context;
-use crate::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent};
+use crate::common::event::{
+    AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent,
+};
 use crate::common::types::OptionType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

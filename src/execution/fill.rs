@@ -7,6 +7,7 @@ pub trait FillModel {
         &mut self,
         order: &OrderEvent,
         market_data: &dyn MarketDataView,
+        evaluation_timestamp: i64,
     ) -> Option<FillEvent>;
 }
 
@@ -65,12 +66,18 @@ impl FillModel for DefaultFillModel {
         &mut self,
         order: &OrderEvent,
         market_data: &dyn MarketDataView,
+        evaluation_timestamp: i64,
     ) -> Option<FillEvent> {
-        let target_bar = market_data.get_bar_at_or_before(order.instrument_id, order.timestamp)?;
+        if evaluation_timestamp < order.timestamp {
+            return None;
+        }
+
+        let target_bar =
+            market_data.get_bar_at_or_before(order.instrument_id, evaluation_timestamp)?;
 
         // Now check staleness on `target_bar`
         if let Some(detector) = &self.stale_detector {
-            if detector.check(order.timestamp, target_bar.timestamp) != DataStatus::Fresh {
+            if detector.check(evaluation_timestamp, target_bar.timestamp) != DataStatus::Fresh {
                 return None;
             }
         }
@@ -91,7 +98,7 @@ impl FillModel for DefaultFillModel {
                 }
 
                 Some(FillEvent {
-                    timestamp: order.timestamp,
+                    timestamp: evaluation_timestamp,
                     order_id: order.order_id,
                     instrument_id: order.instrument_id,
                     side: order.side,
@@ -114,7 +121,7 @@ impl FillModel for DefaultFillModel {
 
                 if can_fill {
                     Some(FillEvent {
-                        timestamp: order.timestamp,
+                        timestamp: evaluation_timestamp,
                         order_id: order.order_id,
                         instrument_id: order.instrument_id,
                         side: order.side,
@@ -139,7 +146,7 @@ impl FillModel for DefaultFillModel {
                 if triggered {
                     // Becomes Market Order - Fill at Stop Price (or worse)
                     Some(FillEvent {
-                        timestamp: order.timestamp,
+                        timestamp: evaluation_timestamp,
                         order_id: order.order_id,
                         instrument_id: order.instrument_id,
                         side: order.side,
@@ -189,7 +196,7 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order, &md).unwrap();
+        let fill = model.fill_order(&order, &md, 100).unwrap();
         assert_eq!(fill.fill_price, 105);
         assert_eq!(fill.status, Status::Filled);
     }
@@ -222,7 +229,7 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order_fill, &md).unwrap();
+        let fill = model.fill_order(&order_fill, &md, 100).unwrap();
         assert_eq!(fill.fill_price, 95);
 
         // Buy Limit @ 85 (Low is 90, no fill)
@@ -237,6 +244,186 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        assert!(model.fill_order(&order_no_fill, &md).is_none());
+        assert!(model.fill_order(&order_no_fill, &md, 100).is_none());
+    }
+
+    #[test]
+    fn test_fill_stop_order_buy_stop() {
+        let mut md = MarketData::new();
+        let bar = Bar {
+            timestamp: 100,
+            open: 100,
+            high: 110,
+            low: 90,
+            close: 105,
+            volume: 1000,
+        };
+        md.add_bar("TEST", bar);
+        let id = md.get_id("TEST").unwrap();
+
+        let mut model = DefaultFillModel::new();
+
+        // Buy Stop @ 105 (High is 110, triggers)
+        let order_trigger = OrderEvent {
+            timestamp: 100,
+            order_id: 1,
+            instrument_id: id,
+            order_type: OrderType::Stop(105),
+            side: Side::Buy,
+            price: 105,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        let fill = model.fill_order(&order_trigger, &md, 100).unwrap();
+        assert_eq!(fill.fill_price, 105);
+        assert_eq!(fill.timestamp, 100);
+
+        // Buy Stop @ 115 (High is 110, no trigger)
+        let order_no_trigger = OrderEvent {
+            timestamp: 100,
+            order_id: 2,
+            instrument_id: id,
+            order_type: OrderType::Stop(115),
+            side: Side::Buy,
+            price: 115,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        assert!(model.fill_order(&order_no_trigger, &md, 100).is_none());
+    }
+
+    #[test]
+    fn test_fill_stop_order_sell_stop() {
+        let mut md = MarketData::new();
+        let bar = Bar {
+            timestamp: 100,
+            open: 100,
+            high: 110,
+            low: 90,
+            close: 105,
+            volume: 1000,
+        };
+        md.add_bar("TEST", bar);
+        let id = md.get_id("TEST").unwrap();
+
+        let mut model = DefaultFillModel::new();
+
+        // Sell Stop @ 95 (Low is 90, triggers)
+        let order_trigger = OrderEvent {
+            timestamp: 100,
+            order_id: 1,
+            instrument_id: id,
+            order_type: OrderType::Stop(95),
+            side: Side::Sell,
+            price: 95,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        let fill = model.fill_order(&order_trigger, &md, 100).unwrap();
+        assert_eq!(fill.fill_price, 95);
+
+        // Sell Stop @ 80 (Low is 90, no trigger)
+        let order_no_trigger = OrderEvent {
+            timestamp: 100,
+            order_id: 2,
+            instrument_id: id,
+            order_type: OrderType::Stop(80),
+            side: Side::Sell,
+            price: 80,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        assert!(model.fill_order(&order_no_trigger, &md, 100).is_none());
+    }
+
+    #[test]
+    fn test_fill_pending_order_deferred_evaluation() {
+        // Pending order placed at bar T=100, evaluated later at T=200 on a different bar
+        let mut md = MarketData::new();
+
+        // Original bar where order was placed
+        md.add_bar(
+            "TEST",
+            Bar {
+                timestamp: 100,
+                open: 100,
+                high: 110,
+                low: 90,
+                close: 105,
+                volume: 1000,
+            },
+        );
+
+        // Later bar where stop triggers
+        md.add_bar(
+            "TEST",
+            Bar {
+                timestamp: 200,
+                open: 115,
+                high: 120,
+                low: 110,
+                close: 115,
+                volume: 1000,
+            },
+        );
+
+        let id = md.get_id("TEST").unwrap();
+        let mut model = DefaultFillModel::new();
+
+        // Order placed at T=100 with stop @ 118 (not triggered in first bar)
+        let order = OrderEvent {
+            timestamp: 100,
+            order_id: 1,
+            instrument_id: id,
+            order_type: OrderType::Stop(118),
+            side: Side::Buy,
+            price: 118,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        // Evaluated at T=100 (original bar): no trigger
+        assert!(model.fill_order(&order, &md, 100).is_none());
+
+        // Evaluated at T=200 (later bar with high=120): triggers
+        let fill = model.fill_order(&order, &md, 200).unwrap();
+        assert_eq!(fill.fill_price, 118);
+        assert_eq!(fill.timestamp, 200); // fill timestamp is evaluation time
+    }
+
+    #[test]
+    fn test_fill_rejects_order_before_creation_time() {
+        let mut md = MarketData::new();
+        md.add_bar(
+            "TEST",
+            Bar {
+                timestamp: 100,
+                open: 100,
+                high: 110,
+                low: 90,
+                close: 105,
+                volume: 1000,
+            },
+        );
+        let id = md.get_id("TEST").unwrap();
+
+        let mut model = DefaultFillModel::new();
+        let order = OrderEvent {
+            timestamp: 100,
+            order_id: 1,
+            instrument_id: id,
+            order_type: OrderType::Market,
+            side: Side::Buy,
+            price: 0,
+            quantity: 10,
+            strategy_id: "test".to_string(),
+        };
+
+        // Try to evaluate at timestamp before order creation: should return None
+        assert!(model.fill_order(&order, &md, 50).is_none());
     }
 }

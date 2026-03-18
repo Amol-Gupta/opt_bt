@@ -1,4 +1,4 @@
-use crate::common::event::{Event, FillEvent, OrderEvent};
+use crate::common::event::{AlarmEvent, CancelOrderEvent, Event, FillEvent, OrderEvent, OrderRejectionEvent};
 use crate::common::types::{InstrumentId, OrderType, Side};
 use crate::data::models::Bar;
 use crate::data::view::MarketDataView;
@@ -22,6 +22,14 @@ pub struct PositionPnlSnapshot {
     pub realized_pnl: i64,
     pub unrealized_pnl: i64,
     pub mtm_pnl: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlarmHandle {
+    pub alarm_id: u64,
+    pub key: String,
+    pub strategy_id: String,
+    pub scheduled_for: i64,
 }
 
 /// Context provides the Strategy with access to market data and execution capabilities.
@@ -59,6 +67,7 @@ pub struct Context {
     strategy_positions: HashMap<String, HashMap<u32, i64>>,
     strategy_mark_prices: HashMap<String, HashMap<u32, i64>>,
     order_strategy_map: HashMap<u64, String>,
+    next_alarm_id: u64,
     desired_subscriptions: BTreeSet<InstrumentId>,
     active_subscriptions: BTreeSet<InstrumentId>,
 }
@@ -78,6 +87,7 @@ impl Context {
             strategy_positions: HashMap::new(),
             strategy_mark_prices: HashMap::new(),
             order_strategy_map: HashMap::new(),
+            next_alarm_id: 1,
             desired_subscriptions: BTreeSet::new(),
             active_subscriptions: BTreeSet::new(),
         }
@@ -285,23 +295,43 @@ impl Context {
         timestamp: i64,
     ) -> u64 {
         if quantity <= 0 {
+            let reason = format!("non-positive quantity={}", quantity);
             self.warn(format!(
-                "rejected order: non-positive quantity={} strategy_id='{}' instrument_id={}",
-                quantity, self.active_strategy_id, instrument_id
+                "rejected order: {} strategy_id='{}' instrument_id={}",
+                reason, self.active_strategy_id, instrument_id
             ));
+            self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
+                timestamp,
+                instrument_id,
+                order_type,
+                side,
+                quantity,
+                reason,
+                strategy_id: self.active_strategy_id.clone(),
+            }));
             return 0;
         }
 
         if side == Side::Buy {
             let required_cash = self.estimate_order_notional(instrument_id, &order_type, quantity);
             if required_cash > self.account.cash {
+                let reason = format!(
+                    "insufficient capital: required_cash={} available_cash={}",
+                    required_cash, self.account.cash
+                );
                 self.warn(format!(
-                    "rejected order: insufficient capital strategy_id='{}' instrument_id={} required_cash={} available_cash={}",
-                    self.active_strategy_id,
-                    instrument_id,
-                    required_cash,
-                    self.account.cash
+                    "rejected order: {} strategy_id='{}' instrument_id={}",
+                    reason, self.active_strategy_id, instrument_id
                 ));
+                self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
+                    timestamp,
+                    instrument_id,
+                    order_type,
+                    side,
+                    quantity,
+                    reason,
+                    strategy_id: self.active_strategy_id.clone(),
+                }));
                 return 0;
             }
         }
@@ -319,11 +349,54 @@ impl Context {
                 current_open_notional,
                 additional_notional,
             ) {
+                let reason = format!(
+                    "allocator rejected: current_open_notional={} additional_notional={}",
+                    current_open_notional, additional_notional
+                );
                 self.warn(format!(
-                    "allocator rejected order: strategy_id='{}' instrument_id={} current_open_notional={} additional_notional={}",
-                    self.active_strategy_id, instrument_id, current_open_notional, additional_notional
+                    "rejected order: {} strategy_id='{}' instrument_id={}",
+                    reason, self.active_strategy_id, instrument_id
                 ));
+                self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
+                    timestamp,
+                    instrument_id,
+                    order_type,
+                    side,
+                    quantity,
+                    reason,
+                    strategy_id: self.active_strategy_id.clone(),
+                }));
                 return 0;
+            }
+        }
+
+        // Reject stop orders with prices already breached in current bar
+        if let OrderType::Stop(stop_price) = order_type {
+            if let Some(bar) = self.get_bar(instrument_id) {
+                let already_triggered = match side {
+                    Side::Buy => bar.high >= stop_price,
+                    Side::Sell => bar.low <= stop_price,
+                };
+                if already_triggered {
+                    let reason = format!(
+                        "stop price already breached: side={:?} stop_price={} bar_high={} bar_low={}",
+                        side, stop_price, bar.high, bar.low
+                    );
+                    self.warn(format!(
+                        "rejected order: {} strategy_id='{}' instrument_id={}",
+                        reason, self.active_strategy_id, instrument_id
+                    ));
+                    self.event_buffer.push(Event::OrderRejection(OrderRejectionEvent {
+                        timestamp,
+                        instrument_id,
+                        order_type,
+                        side,
+                        quantity,
+                        reason,
+                        strategy_id: self.active_strategy_id.clone(),
+                    }));
+                    return 0;
+                }
             }
         }
 
@@ -410,8 +483,50 @@ impl Context {
         (self.current_timestamp as u64) * 1000 + (self.event_buffer.len() as u64)
     }
 
+    pub fn schedule_alarm(&mut self, delay_seconds: i64, key: impl Into<String>) -> AlarmHandle {
+        let scheduled_for = self.current_timestamp.saturating_add(delay_seconds.max(0));
+        self.schedule_alarm_at(scheduled_for, key)
+    }
+
+    pub fn schedule_alarm_at(
+        &mut self,
+        timestamp: i64,
+        key: impl Into<String>,
+    ) -> AlarmHandle {
+        let key = key.into();
+        let alarm_id = self.next_alarm_id;
+        self.next_alarm_id = self.next_alarm_id.saturating_add(1);
+
+        let event = Event::Alarm(AlarmEvent {
+            timestamp,
+            alarm_id,
+            key: key.clone(),
+            strategy_id: self.active_strategy_id.clone(),
+        });
+        self.event_buffer.push(event);
+
+        AlarmHandle {
+            alarm_id,
+            key,
+            strategy_id: self.active_strategy_id.clone(),
+            scheduled_for: timestamp,
+        }
+    }
+
     pub fn collect_events(&mut self) -> Vec<Event> {
         self.event_buffer.drain(..).collect()
+    }
+
+    pub fn cancel_order(&mut self, order_id: u64) {
+        if order_id == 0 {
+            return;
+        }
+        let event = Event::CancelOrder(CancelOrderEvent {
+            timestamp: self.current_timestamp,
+            order_id,
+            strategy_id: self.active_strategy_id.clone(),
+        });
+        self.event_buffer.push(event);
     }
 
     fn estimate_order_notional(
@@ -486,6 +601,52 @@ mod tests {
         let events = ctx.collect_events();
         assert_eq!(events.len(), 1);
         assert!(ctx.event_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_context_schedule_alarm() {
+        let md = Arc::new(MarketData::new());
+        let mut ctx = Context::new(md, 1_000_000 * PRICE_SCALE);
+        ctx.set_strategy_id("alarm_strategy");
+        ctx.set_time(1_000);
+
+        let handle = ctx.schedule_alarm(60, "entry");
+        assert_eq!(handle.alarm_id, 1);
+        assert_eq!(handle.key, "entry");
+        assert_eq!(handle.strategy_id, "alarm_strategy");
+        assert_eq!(handle.scheduled_for, 1_060);
+
+        let events = ctx.collect_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            Event::Alarm(alarm) => {
+                assert_eq!(alarm.alarm_id, 1);
+                assert_eq!(alarm.key, "entry");
+                assert_eq!(alarm.strategy_id, "alarm_strategy");
+                assert_eq!(alarm.timestamp, 1_060);
+            }
+            _ => panic!("Expected Alarm event"),
+        }
+    }
+
+    #[test]
+    fn test_context_cancel_order_event() {
+        let md = Arc::new(MarketData::new());
+        let mut ctx = Context::new(md, 1_000_000 * PRICE_SCALE);
+        ctx.set_strategy_id("cancel_strategy");
+        ctx.set_time(1_000);
+
+        ctx.cancel_order(42);
+        let events = ctx.collect_events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            Event::CancelOrder(cancel) => {
+                assert_eq!(cancel.order_id, 42);
+                assert_eq!(cancel.strategy_id, "cancel_strategy");
+                assert_eq!(cancel.timestamp, 1_000);
+            }
+            _ => panic!("Expected CancelOrder event"),
+        }
     }
 
     #[test]
@@ -700,5 +861,195 @@ mod tests {
 
         let snapshots = ctx.position_wise_pnl();
         assert_eq!(snapshots, vec![snapshot]);
+    }
+
+    #[test]
+    fn test_stop_order_rejection_when_breached() {
+        // Test: Stop order should be rejected if stop price is already breached in current bar
+        // For a BUY stop, this means bar.high >= stop_price
+        // For a SELL stop, this means bar.low <= stop_price
+
+        let mut md = MarketData::new();
+        md.add_bar(
+            "STOCK",
+            Bar {
+                timestamp: 100,
+                open: 100 * PRICE_SCALE,
+                high: 110 * PRICE_SCALE,
+                low: 95 * PRICE_SCALE,
+                close: 105 * PRICE_SCALE,
+                volume: 1000,
+            },
+        );
+
+        let instrument_id = md.get_id("STOCK").expect("instrument missing");
+        let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
+        ctx.set_time(100);
+        ctx.set_strategy_id("test_strategy");
+
+        // Test 1: BUY stop with stop_price = 108
+        // Current bar high = 110, so 110 >= 108 is TRUE -> REJECTED
+        let result = ctx.place_order_at(
+            instrument_id,
+            Side::Buy,
+            OrderType::Stop(108 * PRICE_SCALE),
+            10,
+            100,
+        );
+        assert_eq!(
+            result,
+            0,
+            "BUY stop should be rejected when bar.high >= stop_price"
+        );
+        // Verify rejection event was added to buffer
+        assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
+        if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
+            assert!(
+                rej_event.reason.contains("stop price already breached"),
+                "Rejection reason should mention stop price breach: {}",
+                rej_event.reason
+            );
+        } else {
+            panic!("Expected OrderRejection event");
+        }
+
+        // Clear buffer
+        ctx.event_buffer.clear();
+
+        // Test 2: SELL stop with stop_price = 96
+        // Current bar low = 95, so 95 <= 96 is TRUE -> REJECTED
+        let result = ctx.place_order_at(
+            instrument_id,
+            Side::Sell,
+            OrderType::Stop(96 * PRICE_SCALE),
+            5,
+            100,
+        );
+        assert_eq!(
+            result,
+            0,
+            "SELL stop should be rejected when bar.low <= stop_price"
+        );
+        assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
+        if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
+            assert!(
+                rej_event.reason.contains("stop price already breached"),
+                "Rejection reason should mention stop price breach: {}",
+                rej_event.reason
+            );
+        } else {
+            panic!("Expected OrderRejection event");
+        }
+    }
+
+    #[test]
+    fn test_quantity_validation_rejection() {
+        // Test: Order should be rejected for invalid quantities (0, negative)
+
+        let mut md = MarketData::new();
+        md.add_bar(
+            "STOCK",
+            Bar {
+                timestamp: 100,
+                open: 100 * PRICE_SCALE,
+                high: 100 * PRICE_SCALE,
+                low: 100 * PRICE_SCALE,
+                close: 100 * PRICE_SCALE,
+                volume: 1000,
+            },
+        );
+
+        let instrument_id = md.get_id("STOCK").expect("instrument missing");
+        let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
+        ctx.set_time(100);
+        ctx.set_strategy_id("test_strategy");
+
+        // Test 1: Zero quantity
+        let result = ctx.place_order_at(
+            instrument_id,
+            Side::Buy,
+            OrderType::Market,
+            0,
+            100,
+        );
+        assert_eq!(result, 0, "Order with zero quantity should be rejected");
+        assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
+        if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
+            assert!(
+                rej_event.reason.contains("non-positive quantity"),
+                "Rejection reason should mention non-positive quantity, got: {}",
+                rej_event.reason
+            );
+        } else {
+            panic!("Expected OrderRejection event");
+        }
+
+        // Test 2: Negative quantity
+        ctx.event_buffer.clear();
+        let result = ctx.place_order_at(
+            instrument_id,
+            Side::Sell,
+            OrderType::Market,
+            -5,
+            100,
+        );
+        assert_eq!(result, 0, "Order with negative quantity should be rejected");
+        assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
+        if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
+            assert!(
+                rej_event.reason.contains("non-positive quantity"),
+                "Rejection reason should mention non-positive quantity, got: {}",
+                rej_event.reason
+            );
+        } else {
+            panic!("Expected OrderRejection event");
+        }
+    }
+
+    #[test]
+    fn test_insufficient_capital_rejection() {
+        // Test: Order should be rejected when insufficient capital is available
+
+        let mut md = MarketData::new();
+        md.add_bar(
+            "STOCK",
+            Bar {
+                timestamp: 100,
+                open: 100 * PRICE_SCALE,
+                high: 100 * PRICE_SCALE,
+                low: 100 * PRICE_SCALE,
+                close: 100 * PRICE_SCALE,
+                volume: 1000,
+            },
+        );
+
+        let instrument_id = md.get_id("STOCK").expect("instrument missing");
+
+        // Create context with very small capital
+        let small_capital = 500 * PRICE_SCALE; // Only enough for 5 units at 100 each
+        let mut ctx = Context::new(Arc::new(md), small_capital);
+        ctx.set_time(100);
+        ctx.set_strategy_id("test_strategy");
+
+        // Try to place an order that requires more capital than available
+        // Buying 100 units at ~100 each = 10000 * PRICE_SCALE capital needed
+        let result = ctx.place_order_at(
+            instrument_id,
+            Side::Buy,
+            OrderType::Market,
+            100,
+            100,
+        );
+        assert_eq!(result, 0, "Order should be rejected for insufficient capital");
+        assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
+        if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
+            assert!(
+                rej_event.reason.contains("insufficient capital"),
+                "Rejection reason should mention insufficient capital: {}",
+                rej_event.reason
+            );
+        } else {
+            panic!("Expected OrderRejection event");
+        }
     }
 }

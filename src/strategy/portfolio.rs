@@ -1,5 +1,5 @@
 use crate::common::context::Context;
-use crate::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
+use crate::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent};
 use crate::strategy::Strategy;
 use std::collections::HashMap;
 
@@ -83,6 +83,19 @@ impl Strategy for PortfolioStrategy {
         ctx.set_strategy_id("default");
     }
 
+    fn on_alarm(&mut self, ctx: &mut Context, event: &AlarmEvent) {
+        if let Some(strategy) = self.strategies.get_mut(&event.strategy_id) {
+            ctx.set_strategy_id(&event.strategy_id);
+            strategy.on_alarm(ctx, event);
+        } else {
+            ctx.warn(format!(
+                "unroutable alarm event: strategy_id='{}' alarm_id={} key='{}' ts={}",
+                event.strategy_id, event.alarm_id, event.key, event.timestamp
+            ));
+        }
+        ctx.set_strategy_id("default");
+    }
+
     fn on_signal(&mut self, ctx: &mut Context, event: &SignalEvent) {
         if let Some(strategy) = self.strategies.get_mut(&event.strategy_id) {
             ctx.set_strategy_id(&event.strategy_id);
@@ -108,6 +121,19 @@ impl Strategy for PortfolioStrategy {
             ctx.warn(format!(
                 "unroutable order event: strategy_id='{}' order_id={} ts={}",
                 event.strategy_id, event.order_id, event.timestamp
+            ));
+        }
+        ctx.set_strategy_id("default");
+    }
+
+    fn on_order_rejected(&mut self, ctx: &mut Context, event: &OrderRejectionEvent) {
+        if let Some(strategy) = self.strategies.get_mut(&event.strategy_id) {
+            ctx.set_strategy_id(&event.strategy_id);
+            strategy.on_order_rejected(ctx, event);
+        } else {
+            ctx.warn(format!(
+                "unroutable order rejection: strategy_id='{}' reason='{}' ts={}",
+                event.strategy_id, event.reason, event.timestamp
             ));
         }
         ctx.set_strategy_id("default");

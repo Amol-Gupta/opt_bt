@@ -6,8 +6,11 @@ use std::collections::BinaryHeap;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Market(MarketEvent),
+    Alarm(AlarmEvent),
     Signal(SignalEvent),
     Order(OrderEvent),
+    OrderRejection(OrderRejectionEvent),
+    CancelOrder(CancelOrderEvent),
     Fill(FillEvent),
 }
 
@@ -28,6 +31,14 @@ pub struct SignalEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlarmEvent {
+    pub timestamp: i64,
+    pub alarm_id: u64,
+    pub key: String,
+    pub strategy_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderEvent {
     pub timestamp: i64,
     pub order_id: u64,
@@ -36,6 +47,24 @@ pub struct OrderEvent {
     pub side: Side,
     pub price: i64,
     pub quantity: i64,
+    pub strategy_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelOrderEvent {
+    pub timestamp: i64,
+    pub order_id: u64,
+    pub strategy_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrderRejectionEvent {
+    pub timestamp: i64,
+    pub instrument_id: u32,
+    pub order_type: OrderType,
+    pub side: Side,
+    pub quantity: i64,
+    pub reason: String,
     pub strategy_id: String,
 }
 
@@ -56,8 +85,11 @@ impl Event {
     pub fn timestamp(&self) -> i64 {
         match self {
             Event::Market(e) => e.timestamp,
+            Event::Alarm(e) => e.timestamp,
             Event::Signal(e) => e.timestamp,
             Event::Order(e) => e.timestamp,
+            Event::OrderRejection(e) => e.timestamp,
+            Event::CancelOrder(e) => e.timestamp,
             Event::Fill(e) => e.timestamp,
         }
     }

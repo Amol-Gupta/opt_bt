@@ -4,7 +4,10 @@ use std::time::Instant;
 use chrono::Timelike;
 
 use crate::common::context::Context;
-use crate::common::event::{Event, EventQueue, FillEvent, MarketEvent, OrderEvent};
+use crate::common::event::{
+    AlarmEvent, CancelOrderEvent, Event, EventQueue, FillEvent, MarketEvent, OrderEvent,
+    OrderRejectionEvent,
+};
 use crate::common::logging::set_simulation_time;
 use crate::data::view::MarketDataView;
 use crate::execution::fill::{DefaultFillModel, FillModel};
@@ -86,6 +89,11 @@ impl<S: Strategy> Engine<S> {
         for timestamp in timeline {
             stats.timeline_steps += 1;
 
+            let started_clock = Instant::now();
+            self.context.set_time(timestamp);
+            set_simulation_time(timestamp);
+            stats.clock_update_ns += started_clock.elapsed().as_nanos();
+
             let event_day = timestamp.div_euclid(86_400);
             if current_day != Some(event_day) {
                 let started_day_lifecycle = Instant::now();
@@ -97,11 +105,6 @@ impl<S: Strategy> Engine<S> {
                 stats.day_lifecycle_ns += started_day_lifecycle.elapsed().as_nanos();
                 current_day = Some(event_day);
             }
-
-            let started_clock = Instant::now();
-            self.context.set_time(timestamp);
-            set_simulation_time(timestamp);
-            stats.clock_update_ns += started_clock.elapsed().as_nanos();
 
             let started_non_market = Instant::now();
             self.process_due_non_market_events(timestamp);
@@ -189,7 +192,10 @@ impl<S: Strategy> Engine<S> {
 
         let started_fill_scan = Instant::now();
         for order in &self.pending_orders {
-            if let Some(fill_event) = self.fill_model.fill_order(order, self.market_data.as_ref()) {
+            if let Some(fill_event) =
+                self.fill_model
+                    .fill_order(order, self.market_data.as_ref(), event.timestamp)
+            {
                 fills.push(fill_event);
             } else {
                 remaining_orders.push(order.clone());
@@ -209,7 +215,10 @@ impl<S: Strategy> Engine<S> {
     fn handle_order_event(&mut self, event: &OrderEvent) {
         self.strategy.on_order_event(&mut self.context, event);
 
-        if let Some(fill) = self.fill_model.fill_order(event, self.market_data.as_ref()) {
+        if let Some(fill) =
+            self.fill_model
+                .fill_order(event, self.market_data.as_ref(), event.timestamp)
+        {
             self.event_queue.push(Event::Fill(fill));
         } else {
             self.pending_orders.push(event.clone());
@@ -221,6 +230,20 @@ impl<S: Strategy> Engine<S> {
         self.context.account.on_fill(event);
 
         self.strategy.on_fill(&mut self.context, event);
+    }
+
+    fn handle_cancel_order_event(&mut self, event: &CancelOrderEvent) {
+        self.pending_orders.retain(|order| order.order_id != event.order_id);
+    }
+
+    fn handle_order_rejection_event(&mut self, event: &OrderRejectionEvent) {
+        self.context.set_strategy_id(&event.strategy_id);
+        self.strategy.on_order_rejected(&mut self.context, event);
+    }
+
+    fn handle_alarm_event(&mut self, event: &AlarmEvent) {
+        self.context.set_strategy_id(&event.strategy_id);
+        self.strategy.on_alarm(&mut self.context, event);
     }
 
     fn process_due_non_market_events(&mut self, current_timestamp: i64) {
@@ -239,8 +262,11 @@ impl<S: Strategy> Engine<S> {
 
             match event {
                 Event::Market(_) => {}
+                Event::Alarm(alarm) => self.handle_alarm_event(&alarm),
                 Event::Signal(signal) => self.strategy.on_signal(&mut self.context, &signal),
                 Event::Order(order) => self.handle_order_event(&order),
+                Event::OrderRejection(rejection) => self.handle_order_rejection_event(&rejection),
+                Event::CancelOrder(cancel) => self.handle_cancel_order_event(&cancel),
                 Event::Fill(fill) => self.handle_fill_event(&fill),
             }
 

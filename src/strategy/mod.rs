@@ -8,7 +8,7 @@ pub mod portfolio;
 pub use portfolio::PortfolioStrategy;
 
 use crate::common::context::Context;
-use crate::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
+use crate::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, OrderRejectionEvent, SignalEvent};
 use crate::common::types::OptionType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,8 +35,10 @@ pub trait Strategy: Send {
 
     // Data & Execution
     fn on_market_event(&mut self, _ctx: &mut Context, _event: &MarketEvent) {}
+    fn on_alarm(&mut self, _ctx: &mut Context, _event: &AlarmEvent) {}
     fn on_signal(&mut self, _ctx: &mut Context, _event: &SignalEvent) {}
     fn on_order_event(&mut self, _ctx: &mut Context, _event: &OrderEvent) {}
+    fn on_order_rejected(&mut self, _ctx: &mut Context, _event: &OrderRejectionEvent) {}
     fn on_fill(&mut self, _ctx: &mut Context, _event: &FillEvent) {}
 
     // Instrument selection

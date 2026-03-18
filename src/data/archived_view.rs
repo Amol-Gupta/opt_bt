@@ -17,14 +17,26 @@ pub struct ArchivedMarketDataView {
 
 impl ArchivedMarketDataView {
     pub fn from_path(path: &Path) -> Result<Self> {
+        Self::from_path_internal(path, true)
+    }
+
+    pub fn from_path_trusted(path: &Path) -> Result<Self> {
+        Self::from_path_internal(path, false)
+    }
+
+    fn from_path_internal(path: &Path, validate_archive: bool) -> Result<Self> {
         let file = File::open(path)
             .with_context(|| format!("failed to open snapshot file {}", path.display()))?;
         let mmap = unsafe { MmapOptions::new().map(&file) }
             .with_context(|| format!("failed to mmap snapshot file {}", path.display()))?;
 
-        let bytes = &mmap[..];
-        let _ = rkyv::api::low::access::<ArchivedMarketData, rkyv::rancor::Error>(bytes)
-            .with_context(|| format!("failed to validate archived snapshot {}", path.display()))?;
+        if validate_archive {
+            let bytes = &mmap[..];
+            let _ = rkyv::api::low::access::<ArchivedMarketData, rkyv::rancor::Error>(bytes)
+                .with_context(|| {
+                    format!("failed to validate archived snapshot {}", path.display())
+                })?;
+        }
 
         Ok(Self {
             mmap: Arc::new(mmap),
@@ -80,6 +92,50 @@ impl MarketDataView for ArchivedMarketDataView {
         } else {
             bars.get(low - 1).and_then(Self::decode_bar)
         }
+    }
+
+    fn bars_for_instrument_range(
+        &self,
+        instrument_id: InstrumentId,
+        start_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Vec<Bar> {
+        let archived_id = u32_le::from_native(instrument_id);
+        let Some(bars) = self.archived().bars.get(&archived_id) else {
+            return Vec::new();
+        };
+
+        let mut start_index = 0usize;
+        let mut high = bars.len();
+        while start_index < high {
+            let mid = start_index + (high - start_index) / 2;
+            let Some(candidate) = bars.get(mid) else {
+                break;
+            };
+            if i64::from(candidate.timestamp) < start_timestamp {
+                start_index = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        let mut end_index = start_index;
+        let mut high = bars.len();
+        while end_index < high {
+            let mid = end_index + (high - end_index) / 2;
+            let Some(candidate) = bars.get(mid) else {
+                break;
+            };
+            if i64::from(candidate.timestamp) <= end_timestamp {
+                end_index = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        (start_index..end_index)
+            .filter_map(|index| bars.get(index).and_then(Self::decode_bar))
+            .collect()
     }
 
     fn market_timeline(&self) -> Vec<i64> {

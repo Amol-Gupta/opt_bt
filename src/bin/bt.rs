@@ -1,14 +1,15 @@
 use clap::{Args, Parser, Subcommand};
 use opt_bt::cache::ipc as cache_ipc;
 use opt_bt::cache::snapshot::{
-    load_market_data_snapshot, load_market_data_snapshot_view_with_backend,
-    validate_shared_snapshot_handle,
+    load_market_data_snapshot_view_trusted_with_backend,
+    load_market_data_snapshot_view_with_backend, validate_shared_snapshot_handle,
 };
 use opt_bt::cache::store::{CacheStatus, CacheStatusEntry};
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
 use opt_bt::common::types::{OptionType, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
-use opt_bt::data::models::{Bar, MarketData};
+use opt_bt::data::models::Bar;
+use opt_bt::data::view::MarketDataView;
 use opt_bt::reporting::html::write_html_report;
 use opt_bt::reporting::json::BacktestReport;
 use serde::{Deserialize, Serialize};
@@ -667,10 +668,10 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
     let instrument_id = market_data
         .get_id(&args.symbol)
         .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
-    let bars = market_data
-        .bars
-        .get(&instrument_id)
-        .ok_or_else(|| format!("no bars available for symbol: {}", args.symbol))?;
+    let bars = market_data.bars_for_instrument_range(instrument_id, start_ts, end_ts);
+    if bars.is_empty() {
+        return Err(format!("no bars available for symbol: {}", args.symbol).into());
+    }
 
     let minute_seconds = match args.minute.as_deref() {
         Some(value) => Some(parse_hhmm_to_seconds(value)?),
@@ -687,11 +688,7 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
     );
 
     let mut count = 0usize;
-    for bar in bars {
-        if bar.timestamp < start_ts || bar.timestamp > end_ts {
-            continue;
-        }
-
+    for bar in &bars {
         if let Some(target_seconds) = minute_seconds {
             let sod = bar.timestamp.rem_euclid(86_400);
             if (sod - target_seconds).abs() > window_seconds {
@@ -726,10 +723,10 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
     let instrument_id = market_data
         .get_id(&args.symbol)
         .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
-    let bars = market_data
-        .bars
-        .get(&instrument_id)
-        .ok_or_else(|| format!("no bars available for symbol: {}", args.symbol))?;
+    let bars = market_data.bars_for_instrument_range(instrument_id, start_ts, end_ts);
+    if bars.is_empty() {
+        return Err(format!("no bars available for symbol: {}", args.symbol).into());
+    }
 
     let start_sod = parse_hhmm_to_seconds(&args.start_time)?;
     let end_sod = parse_hhmm_to_seconds(&args.end_time)?;
@@ -743,10 +740,7 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
     );
 
     let mut count = 0usize;
-    for bar in bars {
-        if bar.timestamp < start_ts || bar.timestamp > end_ts {
-            continue;
-        }
+    for bar in &bars {
         let sod = bar.timestamp.rem_euclid(86_400);
         if sod < start_sod || sod > end_sod {
             continue;
@@ -780,22 +774,23 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
 
     let expiry = match args.expiry {
         Some(value) => value,
-        None => nearest_weekly_expiry(&market_data, &args.underlying, query_yyyymmdd).ok_or_else(
-            || {
+        None => nearest_weekly_expiry(market_data.as_ref(), &args.underlying, query_yyyymmdd)
+            .ok_or_else(|| {
                 format!(
                     "no nearest weekly expiry found for underlying={} date={}",
                     args.underlying, args.date
                 )
-            },
-        )?,
+            })?,
     };
 
     let min_strike = args.center_strike - args.points;
     let max_strike = args.center_strike + args.points;
+    let underlying_upper = args.underlying.to_ascii_uppercase();
 
     let mut contracts: Vec<(i64, OptionType, u32, String)> = market_data
-        .instrument_meta
-        .values()
+        .iter_ids()
+        .into_iter()
+        .filter_map(|(instrument_id, _)| market_data.get_instrument(instrument_id))
         .filter_map(|instrument| {
             let option = instrument.option.as_ref()?;
             if option.expiry_yyyymmdd != expiry {
@@ -804,7 +799,7 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
             if !option
                 .underlying
                 .to_ascii_uppercase()
-                .starts_with(&args.underlying.to_ascii_uppercase())
+                .starts_with(&underlying_upper)
             {
                 return None;
             }
@@ -818,7 +813,7 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
                 strike_points,
                 option.option_type,
                 instrument.id,
-                instrument.symbol.clone(),
+                instrument.symbol,
             ))
         })
         .collect();
@@ -968,11 +963,12 @@ fn load_market_data_for_query(
     cache_status: &CacheStatus,
     data_path: &str,
     range: Option<(i64, i64)>,
-) -> Result<(Arc<MarketData>, CacheStatusEntry), DynError> {
+) -> Result<(Arc<dyn MarketDataView>, CacheStatusEntry), DynError> {
     let cache_entry = resolve_cached_entry_for_query(cache_status, data_path, range)?;
     let snapshot_path = Path::new(&cache_entry.entry.snapshot_path);
     validate_shared_snapshot_handle(snapshot_path, &cache_entry.shared_handle)?;
-    Ok((load_market_data_snapshot(snapshot_path)?, cache_entry))
+    let loaded = load_market_data_snapshot_view_trusted_with_backend(snapshot_path)?;
+    Ok((loaded.market_data, cache_entry))
 }
 
 fn cache_server_addr() -> String {
@@ -1146,7 +1142,7 @@ fn yyyymmdd_from_date(date: &str) -> Result<i32, DynError> {
 }
 
 fn nearest_weekly_expiry(
-    market_data: &MarketData,
+    market_data: &dyn MarketDataView,
     underlying: &str,
     today_yyyymmdd: i32,
 ) -> Option<i32> {
@@ -1154,8 +1150,9 @@ fn nearest_weekly_expiry(
     let underlying_upper = underlying.to_ascii_uppercase();
 
     market_data
-        .instrument_meta
-        .values()
+        .iter_ids()
+        .into_iter()
+        .filter_map(|(instrument_id, _)| market_data.get_instrument(instrument_id))
         .filter_map(|instrument| {
             let option = instrument.option.as_ref()?;
             if !option

@@ -78,8 +78,56 @@ pub fn load_market_data_snapshot(path: &Path) -> Result<Arc<MarketData>> {
     }
 }
 
-pub fn load_market_data_snapshot_view(path: &Path) -> Result<Arc<dyn MarketDataView>> {
-    Ok(load_market_data_snapshot_view_with_backend(path)?.market_data)
+pub fn load_market_data_snapshot_view_trusted_with_backend(
+    path: &Path,
+) -> Result<LoadedMarketDataView> {
+    let mode = std::env::var("BT_CACHE_VIEW_MODE")
+        .unwrap_or_else(|_| "archived".to_string())
+        .to_ascii_lowercase();
+
+    match mode.as_str() {
+        "archived" => {
+            if let Ok(view) = ArchivedMarketDataView::from_path_trusted(path) {
+                return Ok(LoadedMarketDataView {
+                    market_data: Arc::new(view),
+                    backend: "archived",
+                });
+            }
+            log::warn!(
+                "trusted archived snapshot view unavailable for {}, falling back to owned mode",
+                path.display()
+            );
+        }
+        "owned" => {
+            let owned = load_market_data_snapshot(path)?;
+            return Ok(LoadedMarketDataView {
+                market_data: owned,
+                backend: "owned",
+            });
+        }
+        other => {
+            log::warn!(
+                "unknown BT_CACHE_VIEW_MODE='{}'; using archived mode with owned fallback",
+                other
+            );
+            if let Ok(view) = ArchivedMarketDataView::from_path_trusted(path) {
+                return Ok(LoadedMarketDataView {
+                    market_data: Arc::new(view),
+                    backend: "archived",
+                });
+            }
+            log::warn!(
+                "trusted archived snapshot view unavailable for {}, falling back to owned mode",
+                path.display()
+            );
+        }
+    }
+
+    let owned = load_market_data_snapshot(path)?;
+    Ok(LoadedMarketDataView {
+        market_data: owned,
+        backend: "owned-fallback",
+    })
 }
 
 pub fn load_market_data_snapshot_view_with_backend(path: &Path) -> Result<LoadedMarketDataView> {

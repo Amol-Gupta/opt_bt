@@ -1,6 +1,6 @@
 use crate::common::types::PRICE_SCALE;
 use crate::config::{Config, SweepConfig};
-use crate::data::models::MarketData;
+use crate::data::view::MarketDataView;
 use crate::engine::runner::Engine;
 use crate::portfolio::allocator::PortfolioAllocator;
 use crate::reporting::json::{generate_report_with_reproducibility, BacktestReport};
@@ -22,7 +22,7 @@ pub struct SweepResult {
 /// F: Factory function: Fn(&Config) -> S
 pub fn run_sweep<S, F>(
     sweep_config: &SweepConfig,
-    market_data: Arc<MarketData>,
+    market_data: Arc<dyn MarketDataView>,
     data_path: &str,
     strategy_factory: F,
 ) -> Vec<SweepResult>

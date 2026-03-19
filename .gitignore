@@ -25,7 +25,7 @@ dist/
 *.egg-info/
 .rustc_info.json
 CACHEDIR.TAG
-/tmp/
+tmp/
 
 # Local sample data artifacts
 /sample_data/sensex_index_final.sample.parquet

@@ -274,92 +274,49 @@ Per-day runner sequencing:
 
 ## Tutorial: Write Your Own Strategy
 
-This is the fastest path to add a new strategy to the engine.
+This section is for **end users / strategy authors** using a workspace project (not editing engine source).
 
-### 1) Create a strategy struct
-Add your strategy in `src/strategy/examples/` (or another module under `src/strategy/`).
+### 1) Create a workspace and project
 
-```rust
-use crate::common::context::Context;
-use crate::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
-use crate::common::types::{OrderType, Side};
-use crate::strategy::Strategy;
-
-pub struct TutorialStrategy {
-  instrument_id: u32,
-  entered_day: Option<i64>,
-}
-
-impl TutorialStrategy {
-  pub fn new(instrument_id: u32) -> Self {
-    Self {
-      instrument_id,
-      entered_day: None,
-    }
-  }
-}
-
-impl Strategy for TutorialStrategy {
-  fn before_open(&mut self, ctx: &mut Context) {
-    // Optional: choose subscriptions for this day.
-    ctx.set_desired_subscriptions(vec![self.instrument_id]);
-    let _ = ctx.apply_subscription_diff();
-  }
-
-  fn on_market_event(&mut self, ctx: &mut Context, event: &MarketEvent) {
-    if event.instrument_id != self.instrument_id {
-      return;
-    }
-
-    let day_key = event.timestamp.div_euclid(86_400);
-    let seconds_of_day = event.timestamp.rem_euclid(86_400);
-
-    // Example: enter once at/after 10:00
-    if self.entered_day != Some(day_key) && seconds_of_day >= 10 * 60 * 60 {
-      ctx.place_order(self.instrument_id, Side::Buy, OrderType::Market, 1);
-      self.entered_day = Some(day_key);
-    }
-  }
-
-  fn after_close(&mut self, ctx: &mut Context) {
-    // Optional: clear subscriptions at end of day.
-    ctx.clear_desired_subscriptions();
-    let _ = ctx.apply_subscription_diff();
-  }
-
-  fn on_signal(&mut self, _ctx: &mut Context, _event: &SignalEvent) {}
-  fn on_order_event(&mut self, _ctx: &mut Context, _event: &OrderEvent) {}
-  fn on_fill(&mut self, _ctx: &mut Context, _event: &FillEvent) {}
-}
-```
-
-### 2) Export the strategy
-If you add a new module/file, export it from `src/strategy/mod.rs` so the binary can use it.
-
-### 3) Register strategy kind in CLI factory
-Update `build_child_strategy` in `src/main.rs` and add a new match arm:
-
-```rust
-"tutorial" => {
-  let instrument_id = spec
-    .params
-    .get("instrument_id")
-    .and_then(|s| s.parse::<u32>().ok())
-    .unwrap_or(1);
-  Some(Box::new(TutorialStrategy::new(instrument_id)))
-}
-```
-
-### 4) Run it
 ```bash
-cargo run --release -- run \
-  --data-dir ./sample_data/niftyIndex2024.sample.parquet \
-  --strategy tutorial \
-  --params instrument_id=1
+bt workspace init --path ./demo_ws
+bt project init --workspace ./demo_ws my_strategy
+```
+
+### 2) Implement strategy in your project crate
+
+Edit your strategy under:
+
+`demo_ws/projects/my_strategy/strategy/src/my_strategy.rs`
+
+You can add extra modules in the same crate (for example `nifty_premium_straddle.rs`) and import them from `my_strategy.rs`.
+
+### 3) Compile and verify strategy discovery
+
+```bash
+cd ./demo_ws/projects/my_strategy/strategy && cargo check
+cd /home/amol/opt_bt
+
+bt list-strategies --project my_strategy --workspace ./demo_ws
+```
+
+### 4) Run your strategy
+
+```bash
+bt run \
+  --project my_strategy \
+  --workspace ./demo_ws \
+  --strategy my_strategy \
+  --data ./sample_data/niftyIndex2024.sample.parquet
 ```
 
 ### 5) Add tests
-See [Contributing Guide](CONTRIBUTING.md#integration-testing) for integration testing guidance and reference examples.
+
+See [Contributing Guide](CONTRIBUTING.md#integration-testing) for test guidance and reference examples.
+
+### Contributor note
+
+Direct engine changes (for example editing `src/main.rs`, `src/strategy/`, or built-in strategy factories) are contributor/developer workflows and belong in [CONTRIBUTING.md](CONTRIBUTING.md), not the end-user path.
 
 ## Project Configuration Reference
 
@@ -599,3 +556,4 @@ The HTML file is self-contained (no external dependencies) and includes:
 - For fixture preparation details, see `sample_data/README.md`.
 - For feature planning artifacts, see `specs/001-options-backtest-engine/`.
 - For the strategy authoring API (orders, alarms, option chain search, rejection events), see [Strategy API Reference](STRATEGY_API.md).
+- For a full end-to-end premium-targeted weekly straddle walkthrough, see [Nifty Weekly Premium Straddle Tutorial](TUTORIAL_PREMIUM_STRADDLE.md).

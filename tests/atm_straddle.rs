@@ -10,8 +10,8 @@ fn test_atm_straddle_sells_at_10_exits_at_11() {
     let mut market_data = MarketData::new();
 
     let day_start = 1_704_067_200; // 2024-01-01 00:00:00 UTC
-    let t_10 = day_start + 10 * 60 * 60;
-    let t_11 = day_start + 11 * 60 * 60;
+    let t_10 = day_start + 4 * 60 * 60 + 30 * 60; // 10:00 IST
+    let t_11 = day_start + 5 * 60 * 60 + 30 * 60; // 11:00 IST
 
     let index_symbol = "NIFTY 50";
     let ce_symbol = "NIFTY11JAN2420000CE";
@@ -84,8 +84,8 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
     let mut market_data = MarketData::new();
 
     let day_start = 1_711_929_600; // 2024-04-01 00:00:00 UTC
-    let t_10 = day_start + 10 * 60 * 60;
-    let t_11 = day_start + 11 * 60 * 60;
+    let t_10 = day_start + 4 * 60 * 60 + 30 * 60; // 10:00 IST
+    let t_11 = day_start + 5 * 60 * 60 + 30 * 60; // 11:00 IST
 
     let index_symbol = "NIFTY 50";
     let near_ce_symbol = "NIFTY04APR2422000CE";

@@ -22,7 +22,7 @@ fi
 
 # Run tests
 echo "  -> Running tests..."
-if ! cargo test --lib; then
+if ! cargo test; then
   echo "Tests failed! Fix failing tests before committing."
   exit 1
 fi

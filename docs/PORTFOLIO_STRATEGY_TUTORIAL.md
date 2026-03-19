@@ -87,26 +87,25 @@ At the configured **exit time** (or if stop loss is hit before that):
 |---|---|---|---|
 | Lot size | `qty=N` | 65 | Number of units per leg (one lot of Nifty options = 25; set to match your lot size). |
 | Stop loss % | `sl_pct=0.20` | 0.20 | Stop loss as a fraction of entry premium. `0.20` = 20% rise in option price triggers stop. |
-| Entry time | `entry_seconds=N` | 19800 (11:00 IST) | **Seconds from midnight UTC.** Used by `nifty_straddle_sl` only. |
-| Exit time | `exit_seconds=N` | 35100 (15:15 IST) | **Seconds from midnight UTC.** Used by `nifty_straddle_sl` only. |
+| Entry time | `entry_seconds=N` | 39600 (11:00 IST) | **Seconds from midnight IST (market local time).** Used by `nifty_straddle_sl` only. |
+| Exit time | `exit_seconds=N` | 54900 (15:15 IST) | **Seconds from midnight IST (market local time).** Used by `nifty_straddle_sl` only. |
 
 > **Note:** For the portfolio strategy (`nifty_straddle_portfolio`) the three entry/exit windows are fixed in code (see [§4](#4-three-time-windows)). Only `qty` and `sl_pct` are configurable at runtime.
 
-### ⚠️ Important: Data timestamps are in UTC
+### ⚠️ Important: Time parameters are market-local (IST)
 
-The parquet data file stores all bar timestamps in **UTC**. NSE (Indian market) operates 09:15–15:30 IST, which is **03:45–10:00 UTC**. When specifying `entry_seconds` and `exit_seconds`, always use **seconds from midnight UTC**:
+The engine now uses timezone-aware `SimTime`. Pass `entry_seconds` and `exit_seconds` as
+**seconds from midnight IST** (local market clock), not UTC offsets.
 
 ```
-IST → UTC conversion: subtract 5 hours 30 minutes (= 19800 seconds)
-
-IST time  →  UTC time  →  UTC seconds from midnight
-09:15        03:45         13500
-09:30        04:00         14400   ← morning entry
-11:00        05:30         19800
-11:30        06:00         21600   ← midday entry / morning exit
-13:30        08:00         28800   ← afternoon entry / midday exit
-15:15        09:45         35100   ← afternoon exit (before close)
-15:30        10:00         36000   ← market close
+IST time  →  seconds from midnight IST
+09:15         33300
+09:30         34200   ← morning entry
+11:00         39600
+11:30         41400   ← midday entry / morning exit
+13:30         48600   ← afternoon entry / midday exit
+15:15         54900   ← afternoon exit (before close)
+15:30         55800   ← market close
 ```
 
 ---
@@ -170,7 +169,7 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
   --end-date 2026-03-06 \
-  --params qty=25 --params sl_pct=0.20 --params entry_seconds=14400 --params exit_seconds=21600
+  --params qty=25 --params sl_pct=0.20 --params entry_seconds=34200 --params exit_seconds=41400
 ```
 
 ### 5.4 Run Midday Straddle (11:30 – 13:30 IST, 20% SL)
@@ -183,7 +182,7 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
   --end-date 2026-03-06 \
-  --params qty=25 --params sl_pct=0.20 --params entry_seconds=21600 --params exit_seconds=28800
+  --params qty=25 --params sl_pct=0.20 --params entry_seconds=41400 --params exit_seconds=48600
 ```
 
 ### 5.5 Run Afternoon Straddle (13:30 – 15:15 IST, 20% SL)
@@ -196,7 +195,7 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
   --end-date 2026-03-06 \
-  --params qty=25 --params sl_pct=0.20 --params entry_seconds=28800 --params exit_seconds=35100
+  --params qty=25 --params sl_pct=0.20 --params entry_seconds=48600 --params exit_seconds=54900
 ```
 
 ### 5.6 View results for each run
@@ -322,24 +321,24 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
 | `bt cache server --bind 127.0.0.1:7878` | Start in-memory cache server |
 | `BT_CACHE_ADDR=... bt cache warm --data <path> --project my_strategy --workspace ./demo_ws --start-date ... --end-date ...` | Load parquet into cache |
 | `BT_CACHE_ADDR=... bt cache status` | Inspect what's in cache |
-| `BT_CACHE_ADDR=... bt run --project my_strategy --workspace ./demo_ws --strategy nifty_straddle_sl --data <path> --start-date ... --end-date ... --params qty=25 --params sl_pct=0.20 --params entry_seconds=14400 --params exit_seconds=21600` | Single straddle strategy (morning window, 09:30–11:30 IST) |
-| `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=21600 --params exit_seconds=28800` | Single straddle (midday, 11:30–13:30 IST) |
-| `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=28800 --params exit_seconds=35100` | Single straddle (afternoon, 13:30–15:15 IST) |
+| `BT_CACHE_ADDR=... bt run --project my_strategy --workspace ./demo_ws --strategy nifty_straddle_sl --data <path> --start-date ... --end-date ... --params qty=25 --params sl_pct=0.20 --params entry_seconds=34200 --params exit_seconds=41400` | Single straddle strategy (morning window, 09:30–11:30 IST) |
+| `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=41400 --params exit_seconds=48600` | Single straddle (midday, 11:30–13:30 IST) |
+| `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=48600 --params exit_seconds=54900` | Single straddle (afternoon, 13:30–15:15 IST) |
 | `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_portfolio --params qty=25 --params sl_pct=0.20` | Combined portfolio (all three windows) |
 | `bt list-strategies --project my_strategy --workspace ./demo_ws` | List all registered strategies |
 
-### UTC seconds reference
+### IST seconds reference
 
-All `entry_seconds` / `exit_seconds` values are **seconds from midnight UTC** (= IST seconds − 19800):
+All `entry_seconds` / `exit_seconds` values are **seconds from midnight IST** (market local time):
 
-| Time (IST) | Time (UTC) | UTC seconds |
-|---|---|---|
-| 09:15 | 03:45 | 13500 |
-| 09:30 | 04:00 | **14400** ← morning entry |
-| 11:30 | 06:00 | **21600** ← morning exit / midday entry |
-| 13:30 | 08:00 | **28800** ← midday exit / afternoon entry |
-| 15:15 | 09:45 | **35100** ← afternoon exit |
-| 15:30 | 10:00 | 36000 |
+| Time (IST) | IST seconds |
+|---|---|
+| 09:15 | 33300 |
+| 09:30 | **34200** ← morning entry |
+| 11:30 | **41400** ← morning exit / midday entry |
+| 13:30 | **48600** ← midday exit / afternoon entry |
+| 15:15 | **54900** ← afternoon exit |
+| 15:30 | 55800 |
 
 ---
 
@@ -354,9 +353,9 @@ The following results were produced by running the four backtests above against
 
 | Strategy | Entry (IST) | Exit (IST) | Fills | P&L (₹) | entry_seconds | exit_seconds |
 |---|---|---|---|---|---|---|
-| Morning | 09:30 | 11:30 | 3131 | +31 102 | 14400 | 21600 |
-| Midday | 11:30 | 13:30 | 3131 | +46 445 | 21600 | 28800 |
-| Afternoon | 13:30 | 15:15 | 3129 | +18 259 | 28800 | 35100 |
+| Morning | 09:30 | 11:30 | 3131 | +31 102 | 34200 | 41400 |
+| Midday | 11:30 | 13:30 | 3131 | +46 445 | 41400 | 48600 |
+| Afternoon | 13:30 | 15:15 | 3129 | +18 259 | 48600 | 54900 |
 | **Portfolio** | all 3 windows | — | 9392 | **+107 092** | (fixed) | (fixed) |
 
 First fill timestamps confirm entries fire at the correct intraday time:

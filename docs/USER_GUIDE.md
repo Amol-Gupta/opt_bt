@@ -76,6 +76,7 @@ bt <command> --help
   - `--benchmark <symbol>` (default: `NIFTY 50`)
   - `--params key=value` (repeatable)
   - `--log-time-mode simulation|wall`
+- If a strategy uses intraday params like `entry_seconds` / `exit_seconds`, pass values as seconds from midnight in the market-local timezone (IST for NSE), not UTC-offset seconds.
 - Writes run artifacts into:
   - `projects/<name>/backtests/<strategy>_<timestamp>_<run_id>/`
 
@@ -553,6 +554,7 @@ The HTML file is self-contained (no external dependencies) and includes:
 ## Notes
 - If `--data-dir` is omitted, engine falls back to `sample_data/niftyIndex2024.sample.parquet` when available.
 - `start_date` and `end_date` are date boundaries (`YYYY-MM-DD`); intraday entry/exit time (for example 10:00/11:00) is defined inside strategy logic.
+- For strategies that expose `entry_seconds` / `exit_seconds`, these represent seconds from midnight in market-local time (IST for NSE). Example: 10:00 IST = 36000, 11:00 IST = 39600.
 - For fixture preparation details, see `sample_data/README.md`.
 - For feature planning artifacts, see `specs/001-options-backtest-engine/`.
 - For the strategy authoring API (orders, alarms, option chain search, rejection events), see [Strategy API Reference](STRATEGY_API.md).

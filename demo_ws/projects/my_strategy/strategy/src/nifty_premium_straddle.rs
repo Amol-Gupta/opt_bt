@@ -1,6 +1,6 @@
 use opt_bt::common::context::Context;
 use opt_bt::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, SignalEvent};
-use opt_bt::common::types::{OptionType, OrderType, Side, PRICE_SCALE};
+use opt_bt::common::types::{OptionType, OrderType, Side, SimTime, PRICE_SCALE};
 use opt_bt::strategy::Strategy;
 use std::collections::{HashMap, HashSet};
 
@@ -52,11 +52,6 @@ impl NiftyPremiumStraddleStrategy {
         }
     }
 
-    fn timestamp_to_yyyymmdd(timestamp: i64) -> Option<i32> {
-        chrono::DateTime::from_timestamp(timestamp, 0)
-            .and_then(|dt| dt.format("%Y%m%d").to_string().parse::<i32>().ok())
-    }
-
     fn yyyymmdd_to_date(yyyymmdd: i32) -> Option<chrono::NaiveDate> {
         let year = yyyymmdd / 10_000;
         let month = ((yyyymmdd / 100) % 100) as u32;
@@ -68,10 +63,6 @@ impl NiftyPremiumStraddleStrategy {
         let today = Self::yyyymmdd_to_date(today_yyyymmdd)?;
         let expiry = Self::yyyymmdd_to_date(expiry_yyyymmdd)?;
         Some((expiry - today).num_days())
-    }
-
-    fn day_start(day_key: i64) -> i64 {
-        day_key * 86_400
     }
 
     fn entry_alarm_key(day_key: i64) -> String {
@@ -88,10 +79,17 @@ impl NiftyPremiumStraddleStrategy {
         Some((kind, day_key))
     }
 
-    fn schedule_day_alarms(&self, ctx: &mut Context, day_key: i64) {
-        let day_start = Self::day_start(day_key);
-        ctx.schedule_alarm_at(day_start + self.entry_seconds + 59, Self::entry_alarm_key(day_key));
-        ctx.schedule_alarm_at(day_start + self.exit_seconds + 59, Self::exit_alarm_key(day_key));
+    fn schedule_day_alarms(&self, ctx: &mut Context, now: SimTime) {
+        let day_key = now.local_date_key() as i64;
+        let day_start = now.start_of_local_day();
+        ctx.schedule_alarm_at(
+            day_start.add_seconds(self.entry_seconds + 59),
+            Self::entry_alarm_key(day_key),
+        );
+        ctx.schedule_alarm_at(
+            day_start.add_seconds(self.exit_seconds + 59),
+            Self::exit_alarm_key(day_key),
+        );
     }
 
     fn ensure_index_instrument_id(&mut self, ctx: &Context) -> Option<u32> {
@@ -209,9 +207,7 @@ impl NiftyPremiumStraddleStrategy {
         let Some(_index_id) = self.ensure_index_instrument_id(ctx) else {
             return;
         };
-        let Some(today_yyyymmdd) = Self::timestamp_to_yyyymmdd(ctx.now()) else {
-            return;
-        };
+        let today_yyyymmdd = ctx.now().local_date_key();
         let Some(expiry_yyyymmdd) = self.nearest_weekly_expiry(ctx, today_yyyymmdd) else {
             log::warn!("nifty_premium_straddle: no weekly expiry for {}", today_yyyymmdd);
             return;
@@ -298,8 +294,7 @@ impl Strategy for NiftyPremiumStraddleStrategy {
     }
 
     fn on_date_change(&mut self, ctx: &mut Context) {
-        let day_key = ctx.now().div_euclid(86_400);
-        self.schedule_day_alarms(ctx, day_key);
+        self.schedule_day_alarms(ctx, ctx.now());
     }
 
     fn on_market_event(&mut self, _ctx: &mut Context, _event: &MarketEvent) {}

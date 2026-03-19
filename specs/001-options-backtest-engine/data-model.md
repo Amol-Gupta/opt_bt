@@ -15,7 +15,7 @@ struct MarketData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Bar {
-    timestamp: i64, // Unix Timestamp (seconds)
+    timestamp: SimTime, // timezone-aware simulation time
     open: i64,      // Price * 10,000
     high: i64,
     low: i64,
@@ -36,7 +36,7 @@ enum EventType {
 }
 
 struct Event {
-    timestamp: i64,
+    timestamp: SimTime,
     priority: u8, // Secondary sort key (e.g., Data < Signal < Order)
     payload: EventType,
 }
@@ -60,7 +60,7 @@ struct Order {
     side: OrderSide,
     order_type: OrderType,
     qty: u32,
-    timestamp: i64,
+    timestamp: SimTime,
     status: OrderStatus,
 }
 
@@ -70,7 +70,7 @@ struct Trade {
     instrument_id: u32,
     price: i64,
     qty: u32,
-    timestamp: i64,
+    timestamp: SimTime,
     commission: i64,
 }
 

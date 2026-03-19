@@ -1,4 +1,4 @@
-use crate::common::types::{OrderType, Side, Status};
+use crate::common::types::{OrderType, Side, SimTime, Status};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 // use crate::strategy::Signal; // Not defined yet
@@ -16,13 +16,13 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarketEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub instrument_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub instrument_id: u32,
     pub side: Side,
     pub price: i64,
@@ -32,7 +32,7 @@ pub struct SignalEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlarmEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub alarm_id: u64,
     pub key: String,
     pub strategy_id: String,
@@ -40,7 +40,7 @@ pub struct AlarmEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub order_id: u64,
     pub instrument_id: u32,
     pub order_type: OrderType,
@@ -52,14 +52,14 @@ pub struct OrderEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelOrderEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub order_id: u64,
     pub strategy_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderRejectionEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub instrument_id: u32,
     pub order_type: OrderType,
     pub side: Side,
@@ -70,7 +70,7 @@ pub struct OrderRejectionEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FillEvent {
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub order_id: u64,
     pub instrument_id: u32,
     pub side: Side,
@@ -82,7 +82,7 @@ pub struct FillEvent {
 }
 
 impl Event {
-    pub fn timestamp(&self) -> i64 {
+    pub fn timestamp(&self) -> SimTime {
         match self {
             Event::Market(e) => e.timestamp,
             Event::Alarm(e) => e.timestamp,
@@ -154,15 +154,15 @@ mod tests {
         let mut queue = EventQueue::new();
 
         let e1 = Event::Market(MarketEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             instrument_id: 1,
         });
         let e2 = Event::Market(MarketEvent {
-            timestamp: 50,
+            timestamp: SimTime::utc(50),
             instrument_id: 1,
         });
         let e3 = Event::Market(MarketEvent {
-            timestamp: 150,
+            timestamp: SimTime::utc(150),
             instrument_id: 1,
         });
 
@@ -171,9 +171,9 @@ mod tests {
         queue.push(e3);
 
         // Should pop e2 (50), then e1 (100), then e3 (150)
-        assert_eq!(queue.pop().unwrap().timestamp(), 50);
-        assert_eq!(queue.pop().unwrap().timestamp(), 100);
-        assert_eq!(queue.pop().unwrap().timestamp(), 150);
+        assert_eq!(queue.pop().unwrap().timestamp(), SimTime::utc(50));
+        assert_eq!(queue.pop().unwrap().timestamp(), SimTime::utc(100));
+        assert_eq!(queue.pop().unwrap().timestamp(), SimTime::utc(150));
         assert!(queue.pop().is_none());
     }
 }

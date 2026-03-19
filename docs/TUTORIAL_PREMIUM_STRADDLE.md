@@ -81,13 +81,13 @@ This lets you control the exact credit received per leg, which directly determin
 
 | Parameter | CLI key | Type | Default | Description |
 |-----------|---------|------|---------|-------------|
-| Entry time | `entry_seconds` | integer | `39600` (11:00) | Seconds since midnight UTC when entry alarm fires |
-| Exit time | `exit_seconds` | integer | `54900` (15:15) | Seconds since midnight UTC when exit alarm fires |
+| Entry time | `entry_seconds` | integer | `39600` (11:00 IST) | Seconds since midnight IST (market local time) when entry alarm fires |
+| Exit time | `exit_seconds` | integer | `54900` (15:15 IST) | Seconds since midnight IST (market local time) when exit alarm fires |
 | Target premium (CP) | `target_premium` | integer (₹) | `100` | Target option premium in whole rupees; engine multiplies by `PRICE_SCALE` internally |
 | Stop loss % | `sl_pct` | float | `0.20` | Fraction above entry price that triggers the buy-stop (e.g. `0.30` = 30 %) |
 | Quantity | `qty` | integer | `65` | Number of units / lots per leg |
 
-### Time conversion quick-reference
+### IST seconds quick-reference
 
 ```
 09:30 → 34200    10:00 → 36000    10:30 → 37800
@@ -189,14 +189,17 @@ pub struct NiftyPremiumStraddleStrategy {
     index_symbol: String,          // "NIFTY 50" — used to read spot price
     option_underlying: String,     // "NIFTY" — prefix match on option.underlying
     quantity: i64,
-    entry_seconds: i64,            // seconds-since-midnight for entry alarm
-    exit_seconds: i64,             // seconds-since-midnight for exit alarm
+    entry_seconds: i64,            // seconds since midnight IST for entry alarm
+    exit_seconds: i64,             // seconds since midnight IST for exit alarm
     stop_loss_ratio: f64,          // e.g. 0.30 for 30 %
     target_premium: i64,           // rupees × PRICE_SCALE
     entered_days: HashSet<i64>,    // day keys already traded
     day_state: HashMap<i64, DailyState>,  // per-day CE/PE ids and stop orders
 }
 ```
+
+`SimTime` is timezone-aware in the engine, so these values are interpreted on the market's local
+clock (IST), not as UTC offsets.
 
 ### Strike selection: `resolve_pair_by_premium`
 

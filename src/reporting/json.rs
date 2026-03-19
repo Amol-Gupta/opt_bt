@@ -1,3 +1,4 @@
+use crate::common::types::SimTime;
 use crate::common::types::{OrderType, PRICE_SCALE};
 use crate::data::view::MarketDataView;
 use crate::engine::runner::Engine;
@@ -7,7 +8,6 @@ use crate::reporting::metrics::calculate_metrics;
 use crate::reporting::portfolio::{build_portfolio_view, PortfolioView};
 use crate::reporting::post_analysis::{run_post_analysis, FlatRateTaxModel, PostAnalysisSummary};
 use crate::strategy::Strategy;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -198,13 +198,8 @@ pub struct DailyDrawdownPoint {
     pub drawdown_abs: f64,
 }
 
-fn format_timestamp(ts: i64) -> String {
-    // Assuming ts is seconds? Or millis?
-    // Bar timestamp usually seconds.
-    if let Some(dt) = DateTime::<Utc>::from_timestamp(ts, 0) {
-        return dt.to_rfc3339();
-    }
-    ts.to_string()
+fn format_timestamp(ts: SimTime) -> String {
+    ts.format_rfc3339()
 }
 
 pub fn generate_report<S: Strategy>(engine: &Engine<S>) -> BacktestReport {
@@ -228,7 +223,8 @@ pub fn generate_report_with_reproducibility<S: Strategy>(
         .or(trade_max_ts)
         .unwrap_or(engine.context.current_timestamp);
     let duration_ms = if simulation_end_ts >= simulation_start_ts {
-        ((simulation_end_ts - simulation_start_ts + 1) as u64) * 1000
+        ((simulation_end_ts.as_epoch_seconds() - simulation_start_ts.as_epoch_seconds() + 1) as u64)
+            * 1000
     } else {
         0
     };
@@ -346,17 +342,15 @@ fn build_daily_curves(
     raw_trades: &[crate::portfolio::models::Trade],
     market_data: &dyn MarketDataView,
     initial_capital: i64,
-    start_ts: i64,
-    end_ts: i64,
+    start_ts: SimTime,
+    end_ts: SimTime,
 ) -> (Vec<DailyEquityPoint>, Vec<DailyDrawdownPoint>) {
-    let mut last_timestamp_by_day: BTreeMap<String, i64> = BTreeMap::new();
+    let mut last_timestamp_by_day: BTreeMap<String, SimTime> = BTreeMap::new();
     for timestamp in market_data.market_timeline() {
         if timestamp < start_ts || timestamp > end_ts {
             continue;
         }
-        let Some(dt) = DateTime::<Utc>::from_timestamp(timestamp, 0) else {
-            continue;
-        };
+        let dt = timestamp.local_datetime();
         let day_key = dt.format("%Y-%m-%d").to_string();
         last_timestamp_by_day
             .entry(day_key)
@@ -448,15 +442,15 @@ fn build_daily_curves(
 fn build_benchmark_returns(
     market_data: &dyn MarketDataView,
     benchmark_symbol: &str,
-    start_ts: i64,
-    end_ts: i64,
+    start_ts: SimTime,
+    end_ts: SimTime,
 ) -> Vec<f64> {
     let benchmark_id = resolve_benchmark_id(market_data, benchmark_symbol);
     let Some(benchmark_id) = benchmark_id else {
         return Vec::new();
     };
 
-    let mut timestamps: Vec<i64> = market_data
+    let mut timestamps: Vec<SimTime> = market_data
         .market_timeline()
         .into_iter()
         .filter(|ts| *ts >= start_ts && *ts <= end_ts)

@@ -9,6 +9,7 @@ use crate::common::event::{
     OrderRejectionEvent,
 };
 use crate::common::logging::set_simulation_time;
+use crate::common::types::SimTime;
 use crate::data::view::MarketDataView;
 use crate::execution::fill::{DefaultFillModel, FillModel};
 use crate::strategy::Strategy;
@@ -20,8 +21,8 @@ pub struct Engine<S: Strategy> {
     pub fill_model: Box<dyn FillModel>,
     pub market_data: Arc<dyn MarketDataView>,
     pub pending_orders: Vec<OrderEvent>,
-    pub start_timestamp: Option<i64>,
-    pub end_timestamp: Option<i64>,
+    pub start_timestamp: Option<SimTime>,
+    pub end_timestamp: Option<SimTime>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -52,7 +53,7 @@ impl<S: Strategy> Engine<S> {
         }
     }
 
-    pub fn set_date_bounds(&mut self, start_timestamp: i64, end_timestamp: i64) {
+    pub fn set_date_bounds(&mut self, start_timestamp: SimTime, end_timestamp: SimTime) {
         self.start_timestamp = Some(start_timestamp);
         self.end_timestamp = Some(end_timestamp);
     }
@@ -74,7 +75,7 @@ impl<S: Strategy> Engine<S> {
         if let Some(first_timestamp) = timeline.first().copied().or(self.start_timestamp) {
             let started_clock = Instant::now();
             self.context.set_time(first_timestamp);
-            set_simulation_time(first_timestamp);
+            set_simulation_time(first_timestamp.as_epoch_seconds());
             stats.clock_update_ns += started_clock.elapsed().as_nanos();
         }
 
@@ -82,7 +83,7 @@ impl<S: Strategy> Engine<S> {
         self.on_start();
         stats.start_stop_ns += started_lifecycle.elapsed().as_nanos();
 
-        let mut current_day: Option<i64> = None;
+        let mut current_day: Option<i32> = None;
         let primary_instrument_id = self.primary_instrument_id();
         let started_loop_total = Instant::now();
 
@@ -91,10 +92,10 @@ impl<S: Strategy> Engine<S> {
 
             let started_clock = Instant::now();
             self.context.set_time(timestamp);
-            set_simulation_time(timestamp);
+            set_simulation_time(timestamp.as_epoch_seconds());
             stats.clock_update_ns += started_clock.elapsed().as_nanos();
 
-            let event_day = timestamp.div_euclid(86_400);
+            let event_day = timestamp.local_date_key();
             if current_day != Some(event_day) {
                 let started_day_lifecycle = Instant::now();
                 if current_day.is_some() {
@@ -247,7 +248,7 @@ impl<S: Strategy> Engine<S> {
         self.strategy.on_alarm(&mut self.context, event);
     }
 
-    fn process_due_non_market_events(&mut self, current_timestamp: i64) {
+    fn process_due_non_market_events(&mut self, current_timestamp: SimTime) {
         loop {
             let due = matches!(
                 self.event_queue.peek(),
@@ -278,7 +279,7 @@ impl<S: Strategy> Engine<S> {
         }
     }
 
-    fn collect_market_timeline(&self) -> Vec<i64> {
+    fn collect_market_timeline(&self) -> Vec<SimTime> {
         let start_timestamp = self.start_timestamp;
         let end_timestamp = self.end_timestamp;
 
@@ -305,14 +306,12 @@ impl<S: Strategy> Engine<S> {
     }
 }
 
-fn is_market_hour(timestamp: i64) -> bool {
-    let Some(dt) = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0) else {
-        return false;
-    };
-    let minutes = dt.hour() * 60 + dt.minute();
-    // NSE market hours: 09:15–15:30 IST = 03:45–10:00 UTC
-    let market_open = 3 * 60 + 45;
-    let market_close = 10 * 60;
+fn is_market_hour(timestamp: SimTime) -> bool {
+    let local_dt = timestamp.local_datetime();
+    let minutes = local_dt.hour() * 60 + local_dt.minute();
+    // NSE market hours in local exchange time.
+    let market_open = 9 * 60 + 15;
+    let market_close = 15 * 60 + 30;
     minutes >= market_open && minutes <= market_close
 }
 
@@ -386,7 +385,7 @@ mod tests {
         market_data.add_bar(
             "TEST",
             crate::data::models::Bar {
-                timestamp: 34_200,
+                timestamp: SimTime::utc(34_200),
                 open: 1_000_000,
                 high: 1_000_000,
                 low: 1_000_000,
@@ -397,7 +396,7 @@ mod tests {
         market_data.add_bar(
             "TEST",
             crate::data::models::Bar {
-                timestamp: 120_600,
+                timestamp: SimTime::utc(120_600),
                 open: 1_000_000,
                 high: 1_000_000,
                 low: 1_000_000,

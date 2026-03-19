@@ -1,4 +1,4 @@
-use crate::common::types::PRICE_SCALE;
+use crate::common::types::{MarketTimeZone, SimTime, PRICE_SCALE};
 use crate::data::models::{Bar, MarketData};
 use anyhow::{Context, Result};
 use polars::prelude::*;
@@ -86,9 +86,9 @@ impl DataLoader {
             let symbol = anyvalue_to_symbol(symbol_val)?;
 
             let ts_val = ts_series.get(row_idx)?;
-            let timestamp = anyvalue_to_epoch_seconds(ts_val)?;
+            let timestamp_epoch = anyvalue_to_epoch_seconds(ts_val)?;
             if let Some((start_ts, end_ts)) = range {
-                if timestamp < start_ts || timestamp > end_ts {
+                if timestamp_epoch < start_ts || timestamp_epoch > end_ts {
                     continue;
                 }
             }
@@ -106,7 +106,7 @@ impl DataLoader {
             };
 
             let bar = Bar {
-                timestamp,
+                timestamp: SimTime::new(timestamp_epoch, MarketTimeZone::AsiaKolkata),
                 open: to_scaled_price(anyvalue_to_f64(open_val)?),
                 high: to_scaled_price(anyvalue_to_f64(high_val)?),
                 low: to_scaled_price(anyvalue_to_f64(low_val)?),

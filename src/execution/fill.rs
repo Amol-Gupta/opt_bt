@@ -1,5 +1,5 @@
 use crate::common::event::{FillEvent, OrderEvent};
-use crate::common::types::{OrderType, Side, Status};
+use crate::common::types::{OrderType, Side, SimTime, Status};
 use crate::data::view::MarketDataView;
 
 pub trait FillModel {
@@ -7,7 +7,7 @@ pub trait FillModel {
         &mut self,
         order: &OrderEvent,
         market_data: &dyn MarketDataView,
-        evaluation_timestamp: i64,
+        evaluation_timestamp: SimTime,
     ) -> Option<FillEvent>;
 }
 
@@ -66,7 +66,7 @@ impl FillModel for DefaultFillModel {
         &mut self,
         order: &OrderEvent,
         market_data: &dyn MarketDataView,
-        evaluation_timestamp: i64,
+        evaluation_timestamp: SimTime,
     ) -> Option<FillEvent> {
         if evaluation_timestamp < order.timestamp {
             return None;
@@ -77,7 +77,11 @@ impl FillModel for DefaultFillModel {
 
         // Now check staleness on `target_bar`
         if let Some(detector) = &self.stale_detector {
-            if detector.check(evaluation_timestamp, target_bar.timestamp) != DataStatus::Fresh {
+            if detector.check(
+                evaluation_timestamp.as_epoch_seconds(),
+                target_bar.timestamp.as_epoch_seconds(),
+            ) != DataStatus::Fresh
+            {
                 return None;
             }
         }
@@ -174,7 +178,7 @@ mod tests {
     fn test_fill_market_order() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             open: 100,
             high: 110,
             low: 90,
@@ -186,7 +190,7 @@ mod tests {
 
         let mut model = DefaultFillModel::new();
         let order = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Market,
@@ -196,7 +200,7 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order, &md, 100).unwrap();
+        let fill = model.fill_order(&order, &md, SimTime::utc(100)).unwrap();
         assert_eq!(fill.fill_price, 105);
         assert_eq!(fill.status, Status::Filled);
     }
@@ -205,7 +209,7 @@ mod tests {
     fn test_fill_limit_order() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             open: 100,
             high: 110,
             low: 90,
@@ -219,7 +223,7 @@ mod tests {
 
         // Buy Limit @ 95 (Low is 90, so it fills)
         let order_fill = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Limit(95),
@@ -229,12 +233,14 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order_fill, &md, 100).unwrap();
+        let fill = model
+            .fill_order(&order_fill, &md, SimTime::utc(100))
+            .unwrap();
         assert_eq!(fill.fill_price, 95);
 
         // Buy Limit @ 85 (Low is 90, no fill)
         let order_no_fill = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 2,
             instrument_id: id,
             order_type: OrderType::Limit(85),
@@ -244,14 +250,16 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        assert!(model.fill_order(&order_no_fill, &md, 100).is_none());
+        assert!(model
+            .fill_order(&order_no_fill, &md, SimTime::utc(100))
+            .is_none());
     }
 
     #[test]
     fn test_fill_stop_order_buy_stop() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             open: 100,
             high: 110,
             low: 90,
@@ -265,7 +273,7 @@ mod tests {
 
         // Buy Stop @ 105 (High is 110, triggers)
         let order_trigger = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Stop(105),
@@ -275,13 +283,15 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order_trigger, &md, 100).unwrap();
+        let fill = model
+            .fill_order(&order_trigger, &md, SimTime::utc(100))
+            .unwrap();
         assert_eq!(fill.fill_price, 105);
-        assert_eq!(fill.timestamp, 100);
+        assert_eq!(fill.timestamp, SimTime::utc(100));
 
         // Buy Stop @ 115 (High is 110, no trigger)
         let order_no_trigger = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 2,
             instrument_id: id,
             order_type: OrderType::Stop(115),
@@ -291,14 +301,16 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        assert!(model.fill_order(&order_no_trigger, &md, 100).is_none());
+        assert!(model
+            .fill_order(&order_no_trigger, &md, SimTime::utc(100))
+            .is_none());
     }
 
     #[test]
     fn test_fill_stop_order_sell_stop() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             open: 100,
             high: 110,
             low: 90,
@@ -312,7 +324,7 @@ mod tests {
 
         // Sell Stop @ 95 (Low is 90, triggers)
         let order_trigger = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Stop(95),
@@ -322,12 +334,14 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        let fill = model.fill_order(&order_trigger, &md, 100).unwrap();
+        let fill = model
+            .fill_order(&order_trigger, &md, SimTime::utc(100))
+            .unwrap();
         assert_eq!(fill.fill_price, 95);
 
         // Sell Stop @ 80 (Low is 90, no trigger)
         let order_no_trigger = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 2,
             instrument_id: id,
             order_type: OrderType::Stop(80),
@@ -337,7 +351,9 @@ mod tests {
             strategy_id: "test".to_string(),
         };
 
-        assert!(model.fill_order(&order_no_trigger, &md, 100).is_none());
+        assert!(model
+            .fill_order(&order_no_trigger, &md, SimTime::utc(100))
+            .is_none());
     }
 
     #[test]
@@ -349,7 +365,7 @@ mod tests {
         md.add_bar(
             "TEST",
             Bar {
-                timestamp: 100,
+                timestamp: SimTime::utc(100),
                 open: 100,
                 high: 110,
                 low: 90,
@@ -362,7 +378,7 @@ mod tests {
         md.add_bar(
             "TEST",
             Bar {
-                timestamp: 200,
+                timestamp: SimTime::utc(200),
                 open: 115,
                 high: 120,
                 low: 110,
@@ -376,7 +392,7 @@ mod tests {
 
         // Order placed at T=100 with stop @ 118 (not triggered in first bar)
         let order = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Stop(118),
@@ -387,12 +403,12 @@ mod tests {
         };
 
         // Evaluated at T=100 (original bar): no trigger
-        assert!(model.fill_order(&order, &md, 100).is_none());
+        assert!(model.fill_order(&order, &md, SimTime::utc(100)).is_none());
 
         // Evaluated at T=200 (later bar with high=120): triggers
-        let fill = model.fill_order(&order, &md, 200).unwrap();
+        let fill = model.fill_order(&order, &md, SimTime::utc(200)).unwrap();
         assert_eq!(fill.fill_price, 118);
-        assert_eq!(fill.timestamp, 200); // fill timestamp is evaluation time
+        assert_eq!(fill.timestamp, SimTime::utc(200)); // fill timestamp is evaluation time
     }
 
     #[test]
@@ -401,7 +417,7 @@ mod tests {
         md.add_bar(
             "TEST",
             Bar {
-                timestamp: 100,
+                timestamp: SimTime::utc(100),
                 open: 100,
                 high: 110,
                 low: 90,
@@ -413,7 +429,7 @@ mod tests {
 
         let mut model = DefaultFillModel::new();
         let order = OrderEvent {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             order_id: 1,
             instrument_id: id,
             order_type: OrderType::Market,
@@ -424,6 +440,6 @@ mod tests {
         };
 
         // Try to evaluate at timestamp before order creation: should return None
-        assert!(model.fill_order(&order, &md, 50).is_none());
+        assert!(model.fill_order(&order, &md, SimTime::utc(50)).is_none());
     }
 }

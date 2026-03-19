@@ -1,4 +1,4 @@
-use crate::common::types::{OrderType, Price, Side, Status};
+use crate::common::types::{OrderType, Price, Side, SimTime, Status};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,8 +11,8 @@ pub struct Order {
     pub filled_quantity: i64,
     pub avg_fill_price: Option<Price>,
     pub status: Status,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created_at: SimTime,
+    pub updated_at: SimTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub struct Trade {
     pub side: Side,
     pub quantity: i64,
     pub price: Price,
-    pub timestamp: i64,
+    pub timestamp: SimTime,
     pub fee: i64,
 }
 
@@ -140,7 +140,7 @@ mod tests {
             side: Side::Buy,
             quantity: 10,
             price: 100,
-            timestamp: 1,
+            timestamp: SimTime::utc(1),
             fee: 0,
         };
         pos.update(&t1);
@@ -157,7 +157,7 @@ mod tests {
             side: Side::Buy,
             quantity: 10,
             price: 120,
-            timestamp: 2,
+            timestamp: SimTime::utc(2),
             fee: 0,
         };
         pos.update(&t2);
@@ -173,7 +173,7 @@ mod tests {
             side: Side::Sell,
             quantity: 10,
             price: 130,
-            timestamp: 3,
+            timestamp: SimTime::utc(3),
             fee: 0,
         };
         pos.update(&t3);
@@ -192,7 +192,7 @@ mod tests {
             side: Side::Sell,
             quantity: 20,
             price: 100,
-            timestamp: 4,
+            timestamp: SimTime::utc(4),
             fee: 0,
         };
         pos.update(&t4);

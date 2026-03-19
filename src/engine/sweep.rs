@@ -74,6 +74,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::run_sweep;
+    use crate::common::types::SimTime;
     use crate::config::{Config, SweepConfig};
     use crate::data::models::{Bar, MarketData};
     use crate::strategy::examples::RandomStrategy;
@@ -86,7 +87,7 @@ mod tests {
         let mut md = MarketData::new();
         // Add minimal data (reuse logic from single_run or just basic)
         let bar = Bar {
-            timestamp: 1000,
+            timestamp: SimTime::utc(1000),
             open: 1000000,
             high: 1010000,
             low: 990000,

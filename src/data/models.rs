@@ -1,4 +1,6 @@
-use crate::common::types::{InstrumentId, InstrumentKind, OptionType, Price, PRICE_SCALE};
+use crate::common::types::{
+    InstrumentId, InstrumentKind, MarketTimeZone, OptionType, Price, SimTime, PRICE_SCALE,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -72,8 +74,8 @@ impl Instrument {
     rkyv::Deserialize,
 )]
 pub struct Bar {
-    pub timestamp: i64, // Unix Timestamp (seconds)
-    pub open: Price,    // Price * 10,000
+    pub timestamp: SimTime,
+    pub open: Price, // Price * 10,000
     pub high: Price,
     pub low: Price,
     pub close: Price,
@@ -138,7 +140,7 @@ impl MarketData {
 
         self.bars.entry(id).or_default().push(bar);
         self.bars_by_time
-            .entry(bar.timestamp)
+            .entry(bar.timestamp.as_epoch_seconds())
             .or_default()
             .insert(id, bar);
     }
@@ -155,16 +157,16 @@ impl MarketData {
         self.instrument_meta.get(&id)
     }
 
-    pub fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<&Bar> {
+    pub fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<&Bar> {
         self.bars_by_time
-            .get(&timestamp)
+            .get(&timestamp.as_epoch_seconds())
             .and_then(|bars| bars.get(&instrument_id))
     }
 
     pub fn get_bar_at_or_before(
         &self,
         instrument_id: InstrumentId,
-        timestamp: i64,
+        timestamp: SimTime,
     ) -> Option<&Bar> {
         if let Some(bar) = self.get_bar_at(instrument_id, timestamp) {
             return Some(bar);
@@ -179,8 +181,11 @@ impl MarketData {
         }
     }
 
-    pub fn market_timeline(&self) -> impl Iterator<Item = i64> + '_ {
-        self.bars_by_time.keys().copied()
+    pub fn market_timeline(&self) -> impl Iterator<Item = SimTime> + '_ {
+        self.bars_by_time
+            .keys()
+            .copied()
+            .map(|epoch| SimTime::new(epoch, MarketTimeZone::AsiaKolkata))
     }
 }
 
@@ -267,7 +272,7 @@ mod tests {
     fn test_market_data_basic() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 1000,
+            timestamp: SimTime::new(1000, MarketTimeZone::AsiaKolkata),
             open: 100 * PRICE_SCALE,
             high: 105 * PRICE_SCALE,
             low: 95 * PRICE_SCALE,
@@ -281,7 +286,10 @@ mod tests {
         assert_eq!(md.get_id("NIFTY"), Some(1));
         assert_eq!(md.bars.get(&1).unwrap().len(), 1);
         assert_eq!(md.bars.get(&1).unwrap()[0], bar);
-        assert_eq!(md.get_bar_at(1, 1000), Some(&bar));
+        assert_eq!(
+            md.get_bar_at(1, SimTime::new(1000, MarketTimeZone::AsiaKolkata)),
+            Some(&bar)
+        );
         assert_eq!(
             md.get_instrument(1).map(|instrument| instrument.kind),
             Some(InstrumentKind::Unknown)
@@ -312,7 +320,7 @@ mod tests {
     fn test_add_bar_parses_option_symbol_into_instrument_metadata() {
         let mut md = MarketData::new();
         let bar = Bar {
-            timestamp: 1000,
+            timestamp: SimTime::new(1000, MarketTimeZone::AsiaKolkata),
             open: 10 * PRICE_SCALE,
             high: 11 * PRICE_SCALE,
             low: 9 * PRICE_SCALE,

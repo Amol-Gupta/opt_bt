@@ -1,6 +1,6 @@
 use crate::common::context::Context;
 use crate::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
-use crate::common::types::{InstrumentKind, OptionType, OrderType, Side, PRICE_SCALE};
+use crate::common::types::{InstrumentKind, OptionType, OrderType, Side, SimTime, PRICE_SCALE};
 use crate::strategy::Strategy;
 use std::collections::{HashMap, HashSet};
 
@@ -35,8 +35,8 @@ impl NiftyNearestExpiryStraddleStrategy {
         self.event_log.push(msg);
     }
 
-    fn timestamp_to_yyyymmdd(timestamp: i64) -> Option<i32> {
-        chrono::DateTime::from_timestamp(timestamp, 0)
+    fn timestamp_to_yyyymmdd(timestamp: SimTime) -> Option<i32> {
+        chrono::DateTime::from_timestamp(timestamp.as_epoch_seconds(), 0)
             .and_then(|dt| dt.format("%Y%m%d").to_string().parse::<i32>().ok())
     }
 

@@ -191,7 +191,7 @@ fn to_f64(value: i64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::Side;
+    use crate::common::types::{Side, SimTime};
 
     fn trade(id: u64, side: Side, price_points: i64) -> Trade {
         Trade {
@@ -202,7 +202,7 @@ mod tests {
             side,
             quantity: 1,
             price: price_points * PRICE_SCALE,
-            timestamp: id as i64,
+            timestamp: SimTime::utc(id as i64),
             fee: 0,
         }
     }

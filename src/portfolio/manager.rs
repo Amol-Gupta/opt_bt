@@ -120,7 +120,7 @@ impl Account {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::{Side, Status};
+    use crate::common::types::{Side, SimTime, Status};
 
     #[test]
     fn test_account_buy_sell() {
@@ -129,7 +129,7 @@ mod tests {
 
         // Buy 10 @ 100 (1,000,000)
         let fill1 = FillEvent {
-            timestamp: 1,
+            timestamp: SimTime::utc(1),
             order_id: 1,
             instrument_id: 1,
             side: Side::Buy,
@@ -148,7 +148,7 @@ mod tests {
 
         // Sell 5 @ 120 (1,200,000)
         let fill2 = FillEvent {
-            timestamp: 2,
+            timestamp: SimTime::utc(2),
             order_id: 2,
             instrument_id: 1,
             side: Side::Sell,

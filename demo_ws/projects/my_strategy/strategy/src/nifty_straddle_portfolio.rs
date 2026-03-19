@@ -85,11 +85,6 @@ impl NiftyStraddlePortfolioStrategy {
         self.index_instrument_id
     }
 
-    fn timestamp_to_yyyymmdd(ts: i64) -> Option<i32> {
-        chrono::DateTime::from_timestamp(ts, 0)
-            .and_then(|dt| dt.format("%Y%m%d").to_string().parse::<i32>().ok())
-    }
-
     fn yyyymmdd_to_date(v: i32) -> Option<chrono::NaiveDate> {
         chrono::NaiveDate::from_ymd_opt(v / 10_000, ((v / 100) % 100) as u32, (v % 100) as u32)
     }
@@ -175,7 +170,7 @@ impl NiftyStraddlePortfolioStrategy {
             return;
         }
         let Some(idx_id) = self.ensure_index_id(ctx) else { return };
-        let Some(today) = Self::timestamp_to_yyyymmdd(ctx.now()) else { return };
+        let today = ctx.now().local_date_key();
         let Some(expiry) = self.nearest_weekly_expiry(ctx, today) else { return };
         let Some(idx_bar) = ctx.get_bar(idx_id) else { return };
         let spot = idx_bar.close / PRICE_SCALE;
@@ -241,12 +236,13 @@ impl Strategy for NiftyStraddlePortfolioStrategy {
     }
 
     fn on_date_change(&mut self, ctx: &mut Context) {
-        let day_key = ctx.now().div_euclid(86_400);
-        let day_start = day_key * 86_400;
+        let now = ctx.now();
+        let day_key = now.local_date_key() as i64;
+        let day_start = now.start_of_local_day();
         for (widx, win) in self.windows.iter().enumerate() {
             // +59s so alarm fires at the first bar at-or-after the target minute
-            ctx.schedule_alarm_at(day_start + win.entry_seconds + 59, &Self::entry_key(widx, day_key));
-            ctx.schedule_alarm_at(day_start + win.exit_seconds + 59,  &Self::exit_key(widx, day_key));
+            ctx.schedule_alarm_at(day_start.add_seconds(win.entry_seconds + 59), &Self::entry_key(widx, day_key));
+            ctx.schedule_alarm_at(day_start.add_seconds(win.exit_seconds + 59),  &Self::exit_key(widx, day_key));
         }
     }
 

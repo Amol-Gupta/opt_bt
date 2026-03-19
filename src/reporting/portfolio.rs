@@ -92,6 +92,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::common::types::SimTime;
     use crate::portfolio::manager::StrategyAttribution;
 
     #[test]
@@ -108,7 +109,7 @@ mod tests {
                 side: crate::common::types::Side::Buy,
                 quantity: 1,
                 price: 100 * PRICE_SCALE,
-                timestamp: 0,
+                timestamp: SimTime::utc(0),
                 fee: 0,
             });
 

@@ -6,7 +6,7 @@ use opt_bt::cache::snapshot::{
 };
 use opt_bt::cache::store::{CacheStatus, CacheStatusEntry};
 use opt_bt::cache::{run_cache_server, CacheServerConfig};
-use opt_bt::common::types::{OptionType, PRICE_SCALE};
+use opt_bt::common::types::{MarketTimeZone, OptionType, SimTime, PRICE_SCALE};
 use opt_bt::config::SweepConfig;
 use opt_bt::data::models::Bar;
 use opt_bt::data::view::MarketDataView;
@@ -668,7 +668,11 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
     let instrument_id = market_data
         .get_id(&args.symbol)
         .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
-    let bars = market_data.bars_for_instrument_range(instrument_id, start_ts, end_ts);
+    let bars = market_data.bars_for_instrument_range(
+        instrument_id,
+        SimTime::new(start_ts, MarketTimeZone::AsiaKolkata),
+        SimTime::new(end_ts, MarketTimeZone::AsiaKolkata),
+    );
     if bars.is_empty() {
         return Err(format!("no bars available for symbol: {}", args.symbol).into());
     }
@@ -683,9 +687,7 @@ fn run_data_index_cmd(args: DataIndexArgs) -> Result<(), DynError> {
         "symbol={} data={} start_date={} end_date={}",
         args.symbol, data, start_date, end_date
     );
-    println!(
-        "timestamp             date       time   open      high      low       close     volume"
-    );
+    println!("timestamp             open      high      low       close     volume");
 
     let mut count = 0usize;
     for bar in &bars {
@@ -723,7 +725,11 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
     let instrument_id = market_data
         .get_id(&args.symbol)
         .ok_or_else(|| format!("symbol not found: {}", args.symbol))?;
-    let bars = market_data.bars_for_instrument_range(instrument_id, start_ts, end_ts);
+    let bars = market_data.bars_for_instrument_range(
+        instrument_id,
+        SimTime::new(start_ts, MarketTimeZone::AsiaKolkata),
+        SimTime::new(end_ts, MarketTimeZone::AsiaKolkata),
+    );
     if bars.is_empty() {
         return Err(format!("no bars available for symbol: {}", args.symbol).into());
     }
@@ -735,9 +741,7 @@ fn run_data_contract_cmd(args: DataContractArgs) -> Result<(), DynError> {
         "symbol={} data={} start_date={} end_date={} start_time={} end_time={}",
         args.symbol, data, args.start_date, args.end_date, args.start_time, args.end_time
     );
-    println!(
-        "timestamp             date       time   open      high      low       close     volume"
-    );
+    println!("timestamp             open      high      low       close     volume");
 
     let mut count = 0usize;
     for bar in &bars {
@@ -768,8 +772,11 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
     let (market_data, cache_entry) =
         load_market_data_for_query(&cache_status, &data, Some((day_start_ts, day_end_ts)))?;
     print_cache_entry_summary(&addr, &cache_entry);
-    let query_ts = parse_date_time_utc_epoch(&args.date, &args.time)?;
-    let query_minute_end_ts = query_ts + 59;
+    let query_ts = SimTime::new(
+        parse_date_time_utc_epoch(&args.date, &args.time)?,
+        MarketTimeZone::AsiaKolkata,
+    );
+    let query_minute_end_ts = query_ts.add_seconds(59);
     let query_yyyymmdd = yyyymmdd_from_date(&args.date)?;
 
     let expiry = match args.expiry {
@@ -830,8 +837,8 @@ fn run_data_slice_cmd(args: DataSliceArgs) -> Result<(), DynError> {
         "slice date={} time={} ts_start={} ts_end={} expiry={} underlying={} strike_range=[{}, {}] fill_forward={}",
         args.date,
         args.time,
-        query_ts,
-        query_minute_end_ts,
+        query_ts.as_epoch_seconds(),
+        query_minute_end_ts.as_epoch_seconds(),
         expiry,
         args.underlying,
         min_strike,
@@ -1180,10 +1187,11 @@ fn yyyymmdd_to_date(value: i32) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::from_ymd_opt(year, month, day)
 }
 
-fn format_ts_utc(timestamp: i64) -> String {
-    chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_else(|| timestamp.to_string())
+fn format_ts_utc(timestamp: SimTime) -> String {
+    timestamp
+        .local_datetime()
+        .format("%Y-%m-%d %H:%M:%S %:z")
+        .to_string()
 }
 
 fn fmt_price(price: i64) -> String {
@@ -1192,13 +1200,9 @@ fn fmt_price(price: i64) -> String {
 
 fn print_bar_row(bar: &Bar) {
     let ts = format_ts_utc(bar.timestamp);
-    let date = &ts[0..10];
-    let time = &ts[11..19];
     println!(
-        "{:<20} {:<10} {:<8} {:<9} {:<9} {:<9} {:<9} {:<8}",
+        "{:<25} {:<9} {:<9} {:<9} {:<9} {:<8}",
         ts,
-        date,
-        time,
         fmt_price(bar.open),
         fmt_price(bar.high),
         fmt_price(bar.low),
@@ -1396,7 +1400,8 @@ use {crate_name}::create_strategy_by_id;
 use opt_bt::cache::ipc as cache_ipc;
 use opt_bt::cache::snapshot::load_market_data_snapshot;
 use opt_bt::common::logging;
-use opt_bt::common::types::PRICE_SCALE;
+use opt_bt::common::types::{{MarketTimeZone, SimTime, PRICE_SCALE}};
+use opt_bt::data::loader::DataLoader;
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
 use opt_bt::strategy::portfolio::PortfolioStrategy;
@@ -1424,11 +1429,41 @@ fn load_market_data(
 ) -> std::sync::Arc<opt_bt::data::models::MarketData> {{
     let addr = std::env::var("BT_CACHE_ADDR")
         .unwrap_or_else(|_| panic!("BT_CACHE_ADDR is required: backtest runs in cache-only mode"));
-    let ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
+    let mut ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
         .unwrap_or_else(|err| panic!("Cache ENSURE failed for {{}} via {{}}: {{}}", data_path, addr, err));
-    let snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path);
-    let md = load_market_data_snapshot(snapshot_path)
-        .unwrap_or_else(|err| panic!("Failed to load cache snapshot {{}}: {{}}", ensured.entry.snapshot_path, err));
+    let mut snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path).to_path_buf();
+
+    let md = match load_market_data_snapshot(&snapshot_path) {{
+        Ok(md) => md,
+        Err(first_err) => {{
+            log::warn!(
+                "cache snapshot load failed once; evicting and retrying path={{}} snapshot={{}} err={{}}",
+                data_path,
+                ensured.entry.snapshot_path,
+                first_err
+            );
+            let _ = cache_ipc::evict(&addr, data_path);
+            ensured = cache_ipc::ensure_loaded(&addr, data_path, Some((start_ts, end_ts)))
+                .unwrap_or_else(|err| panic!("Cache ENSURE retry failed for {{}} via {{}}: {{}}", data_path, addr, err));
+            snapshot_path = std::path::Path::new(&ensured.entry.snapshot_path).to_path_buf();
+            match load_market_data_snapshot(&snapshot_path) {{
+                Ok(md) => md,
+                Err(err) => {{
+                    log::warn!(
+                        "cache snapshot still unreadable after retry; falling back to parquet loader path={{}} err={{}}",
+                        data_path,
+                        err
+                    );
+                    DataLoader::load_parquet_range(data_path, start_ts, end_ts)
+                        .unwrap_or_else(|load_err| panic!(
+                            "Fallback parquet load failed for {{}}: {{}}",
+                            data_path,
+                            load_err
+                        ))
+                }}
+            }}
+        }}
+    }};
     log::info!(
         "Loaded market data via cache snapshot: cache_hit={{}} snapshot={{}}",
         ensured.cache_hit,
@@ -1538,7 +1573,10 @@ fn main() {{
     portfolio.add_strategy(&strategy_id, strategy);
 
     let mut engine = Engine::new(portfolio, market_data, initial_capital * PRICE_SCALE);
-    engine.set_date_bounds(start_ts, end_ts);
+    engine.set_date_bounds(
+        SimTime::new(start_ts, MarketTimeZone::AsiaKolkata),
+        SimTime::new(end_ts, MarketTimeZone::AsiaKolkata),
+    );
     engine.init();
     engine.run();
 

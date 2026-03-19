@@ -1,6 +1,6 @@
 use opt_bt::common::context::Context;
 use opt_bt::common::event::FillEvent;
-use opt_bt::common::types::{Side, Status, PRICE_SCALE};
+use opt_bt::common::types::{Side, SimTime, Status, PRICE_SCALE};
 use opt_bt::data::models::{Bar, MarketData};
 use opt_bt::strategy::examples::NiftyNearestExpiryStraddleStrategy;
 use opt_bt::strategy::Strategy;
@@ -12,7 +12,7 @@ fn test_after_close_logs_position_pnl_when_populated() {
     market_data.add_bar(
         "NIFTY",
         Bar {
-            timestamp: 100,
+            timestamp: SimTime::utc(100),
             open: 100 * PRICE_SCALE,
             high: 100 * PRICE_SCALE,
             low: 100 * PRICE_SCALE,
@@ -23,7 +23,7 @@ fn test_after_close_logs_position_pnl_when_populated() {
     market_data.add_bar(
         "NIFTY",
         Bar {
-            timestamp: 101,
+            timestamp: SimTime::utc(101),
             open: 110 * PRICE_SCALE,
             high: 110 * PRICE_SCALE,
             low: 110 * PRICE_SCALE,
@@ -34,10 +34,10 @@ fn test_after_close_logs_position_pnl_when_populated() {
     let instrument_id = market_data.get_id("NIFTY").expect("missing instrument");
 
     let mut ctx = Context::new(Arc::new(market_data), 1_000_000 * PRICE_SCALE);
-    ctx.set_time(101);
+    ctx.set_time(SimTime::utc(101));
 
     let fill = FillEvent {
-        timestamp: 100,
+        timestamp: SimTime::utc(100),
         order_id: 1,
         instrument_id,
         side: Side::Buy,

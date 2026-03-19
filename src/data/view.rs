@@ -1,16 +1,16 @@
-use crate::common::types::InstrumentId;
+use crate::common::types::{InstrumentId, SimTime};
 use crate::data::models::{Bar, Instrument, MarketData};
 
 pub trait MarketDataView: Send + Sync + std::fmt::Debug {
-    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar>;
-    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar>;
+    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar>;
+    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar>;
     fn bars_for_instrument_range(
         &self,
         instrument_id: InstrumentId,
-        start_timestamp: i64,
-        end_timestamp: i64,
+        start_timestamp: SimTime,
+        end_timestamp: SimTime,
     ) -> Vec<Bar>;
-    fn market_timeline(&self) -> Vec<i64>;
+    fn market_timeline(&self) -> Vec<SimTime>;
     fn get_id(&self, symbol: &str) -> Option<InstrumentId>;
     fn get_symbol(&self, id: InstrumentId) -> Option<String>;
     fn get_instrument(&self, id: InstrumentId) -> Option<Instrument>;
@@ -20,19 +20,19 @@ pub trait MarketDataView: Send + Sync + std::fmt::Debug {
 }
 
 impl MarketDataView for MarketData {
-    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar> {
+    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar> {
         self.get_bar_at(instrument_id, timestamp).copied()
     }
 
-    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar> {
+    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar> {
         self.get_bar_at_or_before(instrument_id, timestamp).copied()
     }
 
     fn bars_for_instrument_range(
         &self,
         instrument_id: InstrumentId,
-        start_timestamp: i64,
-        end_timestamp: i64,
+        start_timestamp: SimTime,
+        end_timestamp: SimTime,
     ) -> Vec<Bar> {
         let Some(bars) = self.bars.get(&instrument_id) else {
             return Vec::new();
@@ -44,7 +44,7 @@ impl MarketDataView for MarketData {
         bars[start_index..end_index].to_vec()
     }
 
-    fn market_timeline(&self) -> Vec<i64> {
+    fn market_timeline(&self) -> Vec<SimTime> {
         self.market_timeline().collect()
     }
 

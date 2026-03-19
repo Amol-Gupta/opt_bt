@@ -1,6 +1,6 @@
 use opt_bt::common::context::Context;
 use opt_bt::common::event::{FillEvent, MarketEvent};
-use opt_bt::common::types::{OrderType, Side};
+use opt_bt::common::types::{OrderType, Side, SimTime};
 use opt_bt::data::models::{Bar, MarketData};
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
@@ -77,7 +77,7 @@ fn test_multi_leg_straddle() {
     let start_ts = 1672564500; // 09:15:00 UTC
     for i in 0..10 {
         bars_ce.push(Bar {
-            timestamp: start_ts + i * 60,
+            timestamp: SimTime::utc(start_ts + i * 60),
             open: 100 * 10000,
             high: 110 * 10000,
             low: 90 * 10000,
@@ -90,7 +90,7 @@ fn test_multi_leg_straddle() {
     let mut bars_pe = Vec::new();
     for i in 0..10 {
         bars_pe.push(Bar {
-            timestamp: start_ts + i * 60,
+            timestamp: SimTime::utc(start_ts + i * 60),
             open: 200 * 10000,
             high: 210 * 10000,
             low: 190 * 10000,

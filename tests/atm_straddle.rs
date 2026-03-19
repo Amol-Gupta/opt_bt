@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use opt_bt::common::types::{InstrumentKind, OptionType};
+use opt_bt::common::types::{InstrumentKind, OptionType, SimTime};
 use opt_bt::data::models::{Bar, Instrument, MarketData, OptionSpec};
 use opt_bt::engine::runner::Engine;
 use opt_bt::strategy::{AtmStraddleSellStrategy, NiftyNearestExpiryStraddleStrategy};
@@ -21,7 +21,7 @@ fn test_atm_straddle_sells_at_10_exits_at_11() {
         market_data.add_bar(
             index_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 20_000 * 10_000,
                 high: 20_020 * 10_000,
                 low: 19_980 * 10_000,
@@ -33,7 +33,7 @@ fn test_atm_straddle_sells_at_10_exits_at_11() {
         market_data.add_bar(
             ce_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 120 * 10_000,
                 high: 130 * 10_000,
                 low: 110 * 10_000,
@@ -45,7 +45,7 @@ fn test_atm_straddle_sells_at_10_exits_at_11() {
         market_data.add_bar(
             pe_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 115 * 10_000,
                 high: 125 * 10_000,
                 low: 105 * 10_000,
@@ -85,8 +85,8 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
 
     let day_start = 1_711_929_600; // 2024-04-01 00:00:00 UTC
                                    // Use IST wall-clock offsets to match the sample fixture epoch encoding.
-    let t_10 = day_start + 10 * 60 * 60; // 10:00 IST wall-clock
-    let t_11 = day_start + 11 * 60 * 60; // 11:00 IST wall-clock
+    let t_10 = day_start + 4 * 60 * 60 + 30 * 60; // 10:00 IST
+    let t_11 = day_start + 5 * 60 * 60 + 30 * 60; // 11:00 IST
 
     let index_symbol = "NIFTY 50";
     let near_ce_symbol = "NIFTY04APR2422000CE";
@@ -97,7 +97,7 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
         market_data.add_bar(
             index_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 22_000 * 10_000,
                 high: 22_020 * 10_000,
                 low: 21_980 * 10_000,
@@ -109,7 +109,7 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
         market_data.add_bar(
             near_ce_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 120 * 10_000,
                 high: 130 * 10_000,
                 low: 110 * 10_000,
@@ -121,7 +121,7 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
         market_data.add_bar(
             near_pe_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 118 * 10_000,
                 high: 128 * 10_000,
                 low: 108 * 10_000,
@@ -133,7 +133,7 @@ fn test_nifty_nearest_expiry_straddle_logs_events_and_manages_subscriptions() {
         market_data.add_bar(
             far_ce_symbol,
             Bar {
-                timestamp,
+                timestamp: SimTime::utc(timestamp),
                 open: 140 * 10_000,
                 high: 150 * 10_000,
                 low: 130 * 10_000,

@@ -1,6 +1,6 @@
 use opt_bt::common::context::Context;
 use opt_bt::common::event::{Event, FillEvent, MarketEvent, OrderEvent, SignalEvent};
-use opt_bt::common::types::{OrderType, Side, Status};
+use opt_bt::common::types::{OrderType, Side, SimTime, Status};
 use opt_bt::data::models::MarketData;
 use opt_bt::strategy::portfolio::PortfolioStrategy;
 use opt_bt::strategy::Strategy;
@@ -77,7 +77,7 @@ fn test_portfolio_routing() {
     let mut context = Context::new(market_data.clone(), 100_000);
 
     let market_event = MarketEvent {
-        timestamp: 100,
+        timestamp: SimTime::utc(100),
         instrument_id: 1,
     };
 
@@ -104,7 +104,7 @@ fn test_portfolio_routing() {
     portfolio.on_order_event(&mut context, &order_b);
 
     let fill_a = FillEvent {
-        timestamp: 200,
+        timestamp: SimTime::utc(200),
         order_id: order_a.order_id,
         instrument_id: 1,
         side: Side::Buy,
@@ -124,7 +124,7 @@ fn test_portfolio_routing() {
     assert_eq!(response_a.quantity, 100);
 
     let fill_b = FillEvent {
-        timestamp: 200,
+        timestamp: SimTime::utc(200),
         order_id: order_b.order_id,
         instrument_id: 1,
         side: Side::Buy,
@@ -159,7 +159,7 @@ fn test_unroutable_signal_order_fill_generate_warnings() {
     let mut context = Context::new(market_data, 100_000);
 
     let signal = SignalEvent {
-        timestamp: 100,
+        timestamp: SimTime::utc(100),
         instrument_id: 1,
         side: Side::Buy,
         price: 10,
@@ -169,7 +169,7 @@ fn test_unroutable_signal_order_fill_generate_warnings() {
     portfolio.on_signal(&mut context, &signal);
 
     let order = OrderEvent {
-        timestamp: 101,
+        timestamp: SimTime::utc(101),
         order_id: 999,
         instrument_id: 1,
         order_type: OrderType::Market,
@@ -181,7 +181,7 @@ fn test_unroutable_signal_order_fill_generate_warnings() {
     portfolio.on_order_event(&mut context, &order);
 
     let fill = FillEvent {
-        timestamp: 102,
+        timestamp: SimTime::utc(102),
         order_id: 998,
         instrument_id: 1,
         side: Side::Buy,
@@ -222,7 +222,7 @@ fn test_fill_fallback_routes_after_order_mapping_and_handles_out_of_order() {
     let mut context = Context::new(market_data, 100_000);
 
     let market_event = MarketEvent {
-        timestamp: 200,
+        timestamp: SimTime::utc(200),
         instrument_id: 1,
     };
     portfolio.on_market_event(&mut context, &market_event);
@@ -231,7 +231,7 @@ fn test_fill_fallback_routes_after_order_mapping_and_handles_out_of_order() {
     let mapped_order = initial_orders[0].clone();
 
     let unknown_fill_before_map = FillEvent {
-        timestamp: 201,
+        timestamp: SimTime::utc(201),
         order_id: mapped_order.order_id,
         instrument_id: 1,
         side: Side::Buy,
@@ -255,7 +255,7 @@ fn test_fill_fallback_routes_after_order_mapping_and_handles_out_of_order() {
     portfolio.on_order_event(&mut context, &mapped_order);
 
     let unknown_fill_after_map = FillEvent {
-        timestamp: 202,
+        timestamp: SimTime::utc(202),
         order_id: mapped_order.order_id,
         instrument_id: 1,
         side: Side::Buy,

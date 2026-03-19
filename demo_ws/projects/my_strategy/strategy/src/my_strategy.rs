@@ -118,11 +118,11 @@ pub fn create_strategy_by_id(
     let entry_seconds = params
         .get("entry_seconds")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(5 * 3600 + 30 * 60); // 11:00 IST = 05:30 UTC
+        .unwrap_or(11 * 3600); // 11:00 IST (seconds since midnight IST)
     let exit_seconds = params
         .get("exit_seconds")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(9 * 3600 + 45 * 60); // 15:15 IST = 09:45 UTC
+        .unwrap_or(15 * 3600 + 15 * 60); // 15:15 IST (seconds since midnight IST)
     let target_premium_rupees: i64 = params
         .get("target_premium")
         .and_then(|value| value.parse::<i64>().ok())
@@ -151,20 +151,20 @@ pub fn create_strategy_by_id(
             target_premium,
         ))),
         "nifty_straddle_portfolio" => {
-            // Three non-overlapping intraday time windows (IST times, stored as UTC seconds).
-            // All times in UTC (IST - 5:30):
-            // Morning  : 09:30–11:30 IST = 04:00–06:00 UTC
-            // Midday   : 11:30–13:30 IST = 06:00–08:00 UTC
-            // Afternoon: 13:30–15:15 IST = 08:00–09:45 UTC
+            // Three non-overlapping intraday time windows, all times in IST
+            // (seconds since midnight IST):
+            // Morning  : 09:30–11:30 IST = 34200–41400
+            // Midday   : 11:30–13:30 IST = 41400–48600
+            // Afternoon: 13:30–15:15 IST = 48600–54900
             Some(Box::new(NiftyStraddlePortfolioStrategy::new(
                 "NIFTY 50",
                 "NIFTY",
                 quantity,
                 stop_loss_pct,
                 vec![
-                    ("morning",   4 * 3600,             6 * 3600),       // 09:30–11:30 IST
-                    ("midday",    6 * 3600,             8 * 3600),       // 11:30–13:30 IST
-                    ("afternoon", 8 * 3600, 9 * 3600 + 45 * 60),        // 13:30–15:15 IST
+                    ("morning",    9 * 3600 + 30 * 60, 11 * 3600 + 30 * 60), // 09:30–11:30 IST
+                    ("midday",    11 * 3600 + 30 * 60, 13 * 3600 + 30 * 60), // 11:30–13:30 IST
+                    ("afternoon", 13 * 3600 + 30 * 60, 15 * 3600 + 15 * 60), // 13:30–15:15 IST
                 ],
             )))
         }

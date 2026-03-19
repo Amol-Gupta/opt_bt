@@ -206,8 +206,12 @@ fn realized_pnl_deltas(trades: &[Trade]) -> (Vec<i64>, Option<i64>, Option<i64>)
     let mut positions: HashMap<u32, Position> = HashMap::new();
     let mut deltas = Vec::new();
 
-    let first_ts = trades.first().map(|trade| trade.timestamp);
-    let last_ts = trades.last().map(|trade| trade.timestamp);
+    let first_ts = trades
+        .first()
+        .map(|trade| trade.timestamp.as_epoch_seconds());
+    let last_ts = trades
+        .last()
+        .map(|trade| trade.timestamp.as_epoch_seconds());
 
     for trade in trades {
         let pos = positions
@@ -581,7 +585,7 @@ fn erf_approx(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::Side;
+    use crate::common::types::{Side, SimTime};
 
     fn make_trade(id: u64, ts: i64, side: Side, price_points: i64) -> Trade {
         Trade {
@@ -592,7 +596,7 @@ mod tests {
             side,
             quantity: 1,
             price: price_points * PRICE_SCALE,
-            timestamp: ts,
+            timestamp: SimTime::utc(ts),
             fee: 0,
         }
     }

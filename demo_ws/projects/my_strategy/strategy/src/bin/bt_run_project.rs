@@ -10,7 +10,7 @@ use opt_bt::config::Config;
 use opt_bt::data::view::MarketDataView;
 use my_strategy::create_strategy_by_id;
 use opt_bt::common::logging;
-use opt_bt::common::types::PRICE_SCALE;
+use opt_bt::common::types::{MarketTimeZone, SimTime, PRICE_SCALE};
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report_with_reproducibility;
 use opt_bt::reporting::reproducibility::build_reproducibility;
@@ -157,7 +157,10 @@ fn main() {
     portfolio.add_strategy(&strategy_id, strategy);
 
     let mut engine = Engine::new(portfolio, market_data, initial_capital * PRICE_SCALE);
-    engine.set_date_bounds(start_ts, end_ts);
+    engine.set_date_bounds(
+        SimTime::new(start_ts, MarketTimeZone::AsiaKolkata),
+        SimTime::new(end_ts, MarketTimeZone::AsiaKolkata),
+    );
     engine.init();
     engine.run();
 

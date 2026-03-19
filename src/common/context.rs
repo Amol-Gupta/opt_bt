@@ -1,7 +1,7 @@
 use crate::common::event::{
     AlarmEvent, CancelOrderEvent, Event, FillEvent, OrderEvent, OrderRejectionEvent,
 };
-use crate::common::types::{InstrumentId, OrderType, Side};
+use crate::common::types::{InstrumentId, MarketTimeZone, OrderType, Side, SimTime};
 use crate::data::models::Bar;
 use crate::data::view::MarketDataView;
 use crate::portfolio::allocator::PortfolioAllocator;
@@ -31,7 +31,7 @@ pub struct AlarmHandle {
     pub alarm_id: u64,
     pub key: String,
     pub strategy_id: String,
-    pub scheduled_for: i64,
+    pub scheduled_for: SimTime,
 }
 
 /// Context provides the Strategy with access to market data and execution capabilities.
@@ -43,7 +43,7 @@ pub struct Context {
     pub market_data: Arc<dyn MarketDataView>,
 
     // Current simulation time
-    pub current_timestamp: i64,
+    pub current_timestamp: SimTime,
 
     // Output buffer for generated events (Orders, Logs, etc.)
     // Strategy pushes to this, Engine drains it.
@@ -78,7 +78,7 @@ impl Context {
     pub fn new(market_data: Arc<dyn MarketDataView>, initial_capital: i64) -> Self {
         Self {
             market_data,
-            current_timestamp: 0,
+            current_timestamp: SimTime::new(0, MarketTimeZone::AsiaKolkata),
             event_buffer: Vec::new(),
             account: Account::new(initial_capital),
             active_strategy_id: "default".to_string(),
@@ -103,11 +103,11 @@ impl Context {
         self.active_strategy_id = id.to_string();
     }
 
-    pub fn set_time(&mut self, timestamp: i64) {
+    pub fn set_time(&mut self, timestamp: SimTime) {
         self.current_timestamp = timestamp;
     }
 
-    pub fn now(&self) -> i64 {
+    pub fn now(&self) -> SimTime {
         self.current_timestamp
     }
 
@@ -294,7 +294,7 @@ impl Context {
         side: Side,
         order_type: OrderType,
         quantity: i64,
-        timestamp: i64,
+        timestamp: SimTime,
     ) -> u64 {
         if quantity <= 0 {
             let reason = format!("non-positive quantity={}", quantity);
@@ -486,15 +486,15 @@ impl Context {
         // Simple distinct ID generation
         // In production, use a robust ID generator
         // Using timestamp + buffer len for uniqueness in this scope
-        (self.current_timestamp as u64) * 1000 + (self.event_buffer.len() as u64)
+        (self.current_timestamp.as_epoch_seconds() as u64) * 1000 + (self.event_buffer.len() as u64)
     }
 
     pub fn schedule_alarm(&mut self, delay_seconds: i64, key: impl Into<String>) -> AlarmHandle {
-        let scheduled_for = self.current_timestamp.saturating_add(delay_seconds.max(0));
+        let scheduled_for = self.current_timestamp.add_seconds(delay_seconds.max(0));
         self.schedule_alarm_at(scheduled_for, key)
     }
 
-    pub fn schedule_alarm_at(&mut self, timestamp: i64, key: impl Into<String>) -> AlarmHandle {
+    pub fn schedule_alarm_at(&mut self, timestamp: SimTime, key: impl Into<String>) -> AlarmHandle {
         let key = key.into();
         let alarm_id = self.next_alarm_id;
         self.next_alarm_id = self.next_alarm_id.saturating_add(1);
@@ -559,13 +559,17 @@ mod tests {
     use crate::data::models::MarketData;
     use crate::portfolio::allocator::PortfolioAllocator;
 
+    fn ts(value: i64) -> SimTime {
+        SimTime::new(value, MarketTimeZone::AsiaKolkata)
+    }
+
     #[test]
     fn test_context_place_order() {
         let mut md = MarketData::new();
         md.add_bar(
             "NIFTY",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -577,7 +581,7 @@ mod tests {
         let mut ctx = Context::new(md.clone(), 1_000_000); // 1,000,000 * 10_000 not needed if already scaled, wait. Context::new takes initial_capital.
                                                            // We usually pass scaled capital.
 
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
 
         let order_id = ctx.place_order(1, Side::Buy, OrderType::Limit(1000), 10);
 
@@ -588,7 +592,7 @@ mod tests {
             match &events[0] {
                 Event::Order(o) => {
                     assert_eq!(o.order_id, order_id);
-                    assert_eq!(o.timestamp, 100);
+                    assert_eq!(o.timestamp, ts(100));
                     assert_eq!(o.instrument_id, 1);
                     assert_eq!(o.side, Side::Buy);
                     assert_eq!(o.quantity, 10);
@@ -610,13 +614,16 @@ mod tests {
         let md = Arc::new(MarketData::new());
         let mut ctx = Context::new(md, 1_000_000 * PRICE_SCALE);
         ctx.set_strategy_id("alarm_strategy");
-        ctx.set_time(1_000);
+        ctx.set_time(ts(1_000));
 
         let handle = ctx.schedule_alarm(60, "entry");
         assert_eq!(handle.alarm_id, 1);
         assert_eq!(handle.key, "entry");
         assert_eq!(handle.strategy_id, "alarm_strategy");
-        assert_eq!(handle.scheduled_for, 1_060);
+        assert_eq!(
+            handle.scheduled_for,
+            SimTime::new(1_060, MarketTimeZone::AsiaKolkata)
+        );
 
         let events = ctx.collect_events();
         assert_eq!(events.len(), 1);
@@ -625,7 +632,7 @@ mod tests {
                 assert_eq!(alarm.alarm_id, 1);
                 assert_eq!(alarm.key, "entry");
                 assert_eq!(alarm.strategy_id, "alarm_strategy");
-                assert_eq!(alarm.timestamp, 1_060);
+                assert_eq!(alarm.timestamp, ts(1_060));
             }
             _ => panic!("Expected Alarm event"),
         }
@@ -636,7 +643,7 @@ mod tests {
         let md = Arc::new(MarketData::new());
         let mut ctx = Context::new(md, 1_000_000 * PRICE_SCALE);
         ctx.set_strategy_id("cancel_strategy");
-        ctx.set_time(1_000);
+        ctx.set_time(ts(1_000));
 
         ctx.cancel_order(42);
         let events = ctx.collect_events();
@@ -645,7 +652,7 @@ mod tests {
             Event::CancelOrder(cancel) => {
                 assert_eq!(cancel.order_id, 42);
                 assert_eq!(cancel.strategy_id, "cancel_strategy");
-                assert_eq!(cancel.timestamp, 1_000);
+                assert_eq!(cancel.timestamp, ts(1_000));
             }
             _ => panic!("Expected CancelOrder event"),
         }
@@ -657,7 +664,7 @@ mod tests {
         md.add_bar(
             "NIFTY",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -667,7 +674,7 @@ mod tests {
         );
         let instrument_id = md.get_id("NIFTY").expect("instrument missing");
         let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
         ctx.set_strategy_id("s1");
 
         let mut allocator = PortfolioAllocator::new(1_000_000 * PRICE_SCALE);
@@ -692,7 +699,7 @@ mod tests {
         let mut ctx = Context::new(md, 1_000_000 * PRICE_SCALE);
 
         let buy_fill = FillEvent {
-            timestamp: 100,
+            timestamp: ts(100),
             order_id: 1,
             instrument_id: 7,
             side: Side::Buy,
@@ -709,7 +716,7 @@ mod tests {
         );
 
         let sell_fill = FillEvent {
-            timestamp: 101,
+            timestamp: ts(101),
             order_id: 2,
             instrument_id: 7,
             side: Side::Sell,
@@ -751,7 +758,7 @@ mod tests {
         md.add_bar(
             "NIFTY",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -761,7 +768,7 @@ mod tests {
         );
         let instrument_id = md.get_id("NIFTY").expect("instrument missing");
         let mut ctx = Context::new(Arc::new(md), 10 * PRICE_SCALE);
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
 
         let order_id = ctx.place_order(instrument_id, Side::Buy, OrderType::Market, 1);
         assert_eq!(order_id, 0);
@@ -781,7 +788,7 @@ mod tests {
         md.add_bar(
             "NIFTY",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -792,7 +799,7 @@ mod tests {
         md.add_bar(
             "NIFTY",
             Bar {
-                timestamp: 101,
+                timestamp: ts(101),
                 open: 110 * PRICE_SCALE,
                 high: 110 * PRICE_SCALE,
                 low: 110 * PRICE_SCALE,
@@ -804,7 +811,7 @@ mod tests {
         let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
 
         let buy_fill = FillEvent {
-            timestamp: 100,
+            timestamp: ts(100),
             order_id: 1,
             instrument_id,
             side: Side::Buy,
@@ -825,7 +832,7 @@ mod tests {
         assert_eq!(ctx.instrument_realized_pnl(instrument_id), 0);
         assert_eq!(ctx.realized_pnl(), 0);
 
-        ctx.set_time(101);
+        ctx.set_time(ts(101));
         // Unrealized = 2 * (110 - 100) * PRICE_SCALE
         assert_eq!(
             ctx.instrument_unrealized_pnl(instrument_id),
@@ -835,7 +842,7 @@ mod tests {
         assert_eq!(ctx.mtm_pnl(), 20 * PRICE_SCALE);
 
         let sell_fill = FillEvent {
-            timestamp: 101,
+            timestamp: ts(101),
             order_id: 2,
             instrument_id,
             side: Side::Sell,
@@ -881,7 +888,7 @@ mod tests {
         md.add_bar(
             "STOCK",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 110 * PRICE_SCALE,
                 low: 95 * PRICE_SCALE,
@@ -892,7 +899,7 @@ mod tests {
 
         let instrument_id = md.get_id("STOCK").expect("instrument missing");
         let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
         ctx.set_strategy_id("test_strategy");
 
         // Test 1: BUY stop with stop_price = 108
@@ -902,7 +909,7 @@ mod tests {
             Side::Buy,
             OrderType::Stop(108 * PRICE_SCALE),
             10,
-            100,
+            ts(100),
         );
         assert_eq!(
             result, 0,
@@ -930,7 +937,7 @@ mod tests {
             Side::Sell,
             OrderType::Stop(96 * PRICE_SCALE),
             5,
-            100,
+            ts(100),
         );
         assert_eq!(
             result, 0,
@@ -956,7 +963,7 @@ mod tests {
         md.add_bar(
             "STOCK",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -967,11 +974,11 @@ mod tests {
 
         let instrument_id = md.get_id("STOCK").expect("instrument missing");
         let mut ctx = Context::new(Arc::new(md), 1_000_000 * PRICE_SCALE);
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
         ctx.set_strategy_id("test_strategy");
 
         // Test 1: Zero quantity
-        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 0, 100);
+        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 0, ts(100));
         assert_eq!(result, 0, "Order with zero quantity should be rejected");
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
         if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
@@ -986,7 +993,7 @@ mod tests {
 
         // Test 2: Negative quantity
         ctx.event_buffer.clear();
-        let result = ctx.place_order_at(instrument_id, Side::Sell, OrderType::Market, -5, 100);
+        let result = ctx.place_order_at(instrument_id, Side::Sell, OrderType::Market, -5, ts(100));
         assert_eq!(result, 0, "Order with negative quantity should be rejected");
         assert!(!ctx.event_buffer.is_empty(), "Should have rejection event");
         if let Event::OrderRejection(rej_event) = &ctx.event_buffer[0] {
@@ -1008,7 +1015,7 @@ mod tests {
         md.add_bar(
             "STOCK",
             Bar {
-                timestamp: 100,
+                timestamp: ts(100),
                 open: 100 * PRICE_SCALE,
                 high: 100 * PRICE_SCALE,
                 low: 100 * PRICE_SCALE,
@@ -1022,12 +1029,12 @@ mod tests {
         // Create context with very small capital
         let small_capital = 500 * PRICE_SCALE; // Only enough for 5 units at 100 each
         let mut ctx = Context::new(Arc::new(md), small_capital);
-        ctx.set_time(100);
+        ctx.set_time(ts(100));
         ctx.set_strategy_id("test_strategy");
 
         // Try to place an order that requires more capital than available
         // Buying 100 units at ~100 each = 10000 * PRICE_SCALE capital needed
-        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 100, 100);
+        let result = ctx.place_order_at(instrument_id, Side::Buy, OrderType::Market, 100, ts(100));
         assert_eq!(
             result, 0,
             "Order should be rejected for insufficient capital"

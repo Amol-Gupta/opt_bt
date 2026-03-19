@@ -164,7 +164,7 @@ pub fn place_order_at(
     side: Side,
     order_type: OrderType,
     quantity: i64,
-    timestamp: i64,
+    timestamp: SimTime,
 ) -> u64
 ```
 
@@ -184,7 +184,7 @@ Schedule an alarm for a fixed time offset from now.
 ```rust
 pub fn schedule_alarm(
     &mut self,
-    offset_ms: i64,
+    delay_seconds: i64,
     key: &str,
 ) -> AlarmHandle
 ```
@@ -193,10 +193,10 @@ pub fn schedule_alarm(
 ```rust
 fn on_market_event(&mut self, ctx: &mut Context, _event: &MarketEvent) {
     // Schedule entry signal for 5 minutes from now
-    let entry_alarm = ctx.schedule_alarm(5 * 60 * 1000, "entry");
+    let entry_alarm = ctx.schedule_alarm(5 * 60, "entry");
     
     // Schedule exit signal for 2 hours from now
-    let exit_alarm = ctx.schedule_alarm(2 * 60 * 60 * 1000, "exit");
+    let exit_alarm = ctx.schedule_alarm(2 * 60 * 60, "exit");
 }
 
 fn on_alarm(&mut self, ctx: &mut Context, event: &AlarmEvent) {
@@ -222,18 +222,24 @@ Schedule an alarm for a specific timestamp.
 ```rust
 pub fn schedule_alarm_at(
     &mut self,
-    timestamp: i64,
+    timestamp: SimTime,
     key: &str,
 ) -> AlarmHandle
 ```
 
 **Example:**
 ```rust
-// Schedule entry alarm for 11:00 AM (in milliseconds since market open)
-let alarm_11am = ctx.schedule_alarm_at(11 * 60 * 60 * 1000, "morning_entry");
+// Schedule entry alarm for 11:00 local market time
+let alarm_11am = ctx.schedule_alarm_at(
+    ctx.now().start_of_local_day().add_seconds(11 * 60 * 60),
+    "morning_entry"
+);
 
 // Schedule exit alarm for 3:00 PM
-let alarm_3pm = ctx.schedule_alarm_at(15 * 60 * 60 * 1000, "afternoon_exit");
+let alarm_3pm = ctx.schedule_alarm_at(
+    ctx.now().start_of_local_day().add_seconds(15 * 60 * 60),
+    "afternoon_exit"
+);
 ```
 
 ### Alarm with Correlation Key
@@ -243,7 +249,7 @@ Use the correlation key to scope alarms per security or condition:
 ```rust
 pub fn schedule_alarm_with(
     &mut self,
-    offset_ms: i64,
+    delay_seconds: i64,
     key: &str,
     correlation_key: &str,
 ) -> AlarmHandle
@@ -281,8 +287,8 @@ fn on_alarm(&mut self, ctx: &mut Context, event: &AlarmEvent) {
 - `alarm_id: u32` - Unique identifier (1-indexed)
 - `key: String` - Your alarm identifier
 - `correlation_key: String` - Optional correlation metadata
-- `scheduled_for: i64` - Target timestamp when alarm should trigger
-- `triggered_at: i64` - Actual timestamp when alarm triggered
+- `scheduled_for: SimTime` - Target timestamp when alarm should trigger
+- `timestamp: SimTime` - Actual time when alarm triggered
 - `strategy_id: String` - Strategy that scheduled the alarm
 
 ---
@@ -297,7 +303,7 @@ Find the next weekly expiration from a given date.
 
 **Signature:**
 ```rust
-pub fn nearest_weekly_expiry(&self, from_timestamp: i64) -> Option<i64>
+pub fn nearest_weekly_expiry(&self, from_timestamp: SimTime) -> Option<i64>
 ```
 
 **Example:**
@@ -319,7 +325,7 @@ Get the ATM (at-the-money) call and put strike for a given spot price and expiry
 pub fn resolve_atm_pair(
     &self,
     spot_price: i64,
-    expiry_timestamp: i64,
+    expiry_yyyymmdd: i32,
 ) -> Option<(u32, u32)> // (call_instrument_id, put_instrument_id)
 ```
 
@@ -348,8 +354,8 @@ pub fn filter_by_dte(
     &self,
     min_dte_days: i64,
     max_dte_days: i64,
-    current_timestamp: i64,
-) -> Vec<(String, i64)> // (symbol, expiry_timestamp)
+    current_time: SimTime,
+) -> Vec<(String, i32)> // (symbol, expiry_yyyymmdd)
 ```
 
 **Example:**
@@ -370,7 +376,7 @@ Find calls and puts given strike and expiry.
 pub fn find_option_chain(
     &self,
     strike_price: i64,
-    expiry_timestamp: i64,
+    expiry_yyyymmdd: i32,
 ) -> Option<(u32, u32)> // (call_id, put_id)
 ```
 
@@ -404,7 +410,7 @@ fn on_order_rejected(&mut self, ctx: &mut Context, event: &OrderRejectionEvent) 
 
 ### OrderRejectionEvent Fields
 
-- `timestamp: i64` - When rejection occurred
+- `timestamp: SimTime` - When rejection occurred
 - `instrument_id: u32` - Which instrument
 - `order_type: OrderType` - Type of order (Market, Limit, Stop)
 - `side: Side` - Buy or Sell
@@ -486,7 +492,7 @@ fn on_fill(&mut self, ctx: &mut Context, event: &FillEvent) {
 
 ### FillEvent Fields
 
-- `timestamp: i64` - When order was filled
+- `timestamp: SimTime` - When order was filled
 - `order_id: u64` - Order that was filled
 - `instrument_id: u32` - What was filled
 - `side: Side` - Buy or Sell
@@ -532,7 +538,7 @@ if let Some(bar) = ctx.get_bar(nifty_id) {
 ```
 
 **Bar Fields:**
-- `timestamp: i64` - Candle open time (milliseconds)
+- `timestamp: SimTime` - Candle open time (timezone-aware)
 - `open, high, low, close: i64` - OHLC prices (scaled by PRICE_SCALE)
 - `volume: i64` - Trading volume
 

@@ -1,5 +1,6 @@
 use opt_bt::common::context::Context;
 use opt_bt::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
+use opt_bt::common::types::SimTime;
 use opt_bt::data::models::{Bar, MarketData};
 use opt_bt::engine::runner::Engine;
 use opt_bt::reporting::json::generate_report;
@@ -26,7 +27,7 @@ fn test_single_strategy_run() {
         let low = open.min(close) - 1000;
 
         bars.push(Bar {
-            timestamp: start_ts + i * 60,
+            timestamp: SimTime::utc(start_ts + i * 60),
             open,
             high,
             low,
@@ -108,7 +109,7 @@ fn test_day_open_close_hooks_once_per_day() {
     market_data.add_bar(
         symbol,
         Bar {
-            timestamp: 1_672_564_500,
+            timestamp: SimTime::utc(1_672_564_500),
             open: 1_000_000,
             high: 1_001_000,
             low: 999_000,
@@ -119,7 +120,7 @@ fn test_day_open_close_hooks_once_per_day() {
     market_data.add_bar(
         symbol,
         Bar {
-            timestamp: 1_672_564_500 + 86_400,
+            timestamp: SimTime::utc(1_672_564_500 + 86_400),
             open: 1_000_000,
             high: 1_001_000,
             low: 999_000,

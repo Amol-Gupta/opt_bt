@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use memmap2::MmapOptions;
 use rkyv::rend::{i64_le, u32_le};
 
-use crate::common::types::InstrumentId;
+use crate::common::types::{InstrumentId, MarketTimeZone, SimTime};
 use crate::data::models::{ArchivedBar, ArchivedMarketData, Bar, Instrument};
 use crate::data::view::MarketDataView;
 
@@ -57,15 +57,15 @@ impl ArchivedMarketDataView {
 }
 
 impl MarketDataView for ArchivedMarketDataView {
-    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar> {
-        let archived_ts = i64_le::from_native(timestamp);
+    fn get_bar_at(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar> {
+        let archived_ts = i64_le::from_native(timestamp.as_epoch_seconds());
         let archived_id = u32_le::from_native(instrument_id);
         let at_time = self.archived().bars_by_time.get(&archived_ts)?;
         let bar = at_time.get(&archived_id)?;
         Self::decode_bar(bar)
     }
 
-    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: i64) -> Option<Bar> {
+    fn get_bar_at_or_before(&self, instrument_id: InstrumentId, timestamp: SimTime) -> Option<Bar> {
         if let Some(bar) = self.get_bar_at(instrument_id, timestamp) {
             return Some(bar);
         }
@@ -78,9 +78,9 @@ impl MarketDataView for ArchivedMarketDataView {
         while low < high {
             let mid = low + (high - low) / 2;
             let candidate = bars.get(mid)?;
-            let candidate_ts = i64::from(candidate.timestamp);
+            let candidate_ts = Self::decode_bar(candidate)?.timestamp.as_epoch_seconds();
 
-            if candidate_ts <= timestamp {
+            if candidate_ts <= timestamp.as_epoch_seconds() {
                 low = mid + 1;
             } else {
                 high = mid;
@@ -97,8 +97,8 @@ impl MarketDataView for ArchivedMarketDataView {
     fn bars_for_instrument_range(
         &self,
         instrument_id: InstrumentId,
-        start_timestamp: i64,
-        end_timestamp: i64,
+        start_timestamp: SimTime,
+        end_timestamp: SimTime,
     ) -> Vec<Bar> {
         let archived_id = u32_le::from_native(instrument_id);
         let Some(bars) = self.archived().bars.get(&archived_id) else {
@@ -112,7 +112,12 @@ impl MarketDataView for ArchivedMarketDataView {
             let Some(candidate) = bars.get(mid) else {
                 break;
             };
-            if i64::from(candidate.timestamp) < start_timestamp {
+            let Some(candidate_ts) =
+                Self::decode_bar(candidate).map(|bar| bar.timestamp.as_epoch_seconds())
+            else {
+                break;
+            };
+            if candidate_ts < start_timestamp.as_epoch_seconds() {
                 start_index = mid + 1;
             } else {
                 high = mid;
@@ -126,7 +131,12 @@ impl MarketDataView for ArchivedMarketDataView {
             let Some(candidate) = bars.get(mid) else {
                 break;
             };
-            if i64::from(candidate.timestamp) <= end_timestamp {
+            let Some(candidate_ts) =
+                Self::decode_bar(candidate).map(|bar| bar.timestamp.as_epoch_seconds())
+            else {
+                break;
+            };
+            if candidate_ts <= end_timestamp.as_epoch_seconds() {
                 end_index = mid + 1;
             } else {
                 high = mid;
@@ -138,11 +148,11 @@ impl MarketDataView for ArchivedMarketDataView {
             .collect()
     }
 
-    fn market_timeline(&self) -> Vec<i64> {
+    fn market_timeline(&self) -> Vec<SimTime> {
         self.archived()
             .bars_by_time
             .iter()
-            .map(|(timestamp, _)| i64::from(*timestamp))
+            .map(|(timestamp, _)| SimTime::new(i64::from(*timestamp), MarketTimeZone::AsiaKolkata))
             .collect()
     }
 
@@ -200,7 +210,7 @@ mod tests {
         md.add_bar(
             "NIFTY 50",
             Bar {
-                timestamp: 1_704_067_200,
+                timestamp: SimTime::new(1_704_067_200, MarketTimeZone::AsiaKolkata),
                 open: 21_500 * PRICE_SCALE,
                 high: 21_520 * PRICE_SCALE,
                 low: 21_490 * PRICE_SCALE,
@@ -211,7 +221,7 @@ mod tests {
         md.add_bar(
             "NIFTY 50",
             Bar {
-                timestamp: 1_704_067_260,
+                timestamp: SimTime::new(1_704_067_260, MarketTimeZone::AsiaKolkata),
                 open: 21_510 * PRICE_SCALE,
                 high: 21_530 * PRICE_SCALE,
                 low: 21_505 * PRICE_SCALE,
@@ -223,7 +233,7 @@ mod tests {
         md.add_bar(
             "NIFTY11JAN2421500CE",
             Bar {
-                timestamp: 1_704_067_200,
+                timestamp: SimTime::new(1_704_067_200, MarketTimeZone::AsiaKolkata),
                 open: 100 * PRICE_SCALE,
                 high: 106 * PRICE_SCALE,
                 low: 98 * PRICE_SCALE,
@@ -234,7 +244,7 @@ mod tests {
         md.add_bar(
             "NIFTY11JAN2421500CE",
             Bar {
-                timestamp: 1_704_067_260,
+                timestamp: SimTime::new(1_704_067_260, MarketTimeZone::AsiaKolkata),
                 open: 105 * PRICE_SCALE,
                 high: 108 * PRICE_SCALE,
                 low: 102 * PRICE_SCALE,
@@ -300,21 +310,45 @@ mod tests {
         let option_id = owned.get_id("NIFTY11JAN2421500CE").unwrap();
 
         assert_eq!(
-            owned.get_bar_at(index_id, 1_704_067_200),
-            archived_view.get_bar_at(index_id, 1_704_067_200)
+            owned.get_bar_at(
+                index_id,
+                SimTime::new(1_704_067_200, MarketTimeZone::AsiaKolkata)
+            ),
+            archived_view.get_bar_at(
+                index_id,
+                SimTime::new(1_704_067_200, MarketTimeZone::AsiaKolkata)
+            )
         );
         assert_eq!(
-            owned.get_bar_at(option_id, 1_704_067_260),
-            archived_view.get_bar_at(option_id, 1_704_067_260)
+            owned.get_bar_at(
+                option_id,
+                SimTime::new(1_704_067_260, MarketTimeZone::AsiaKolkata)
+            ),
+            archived_view.get_bar_at(
+                option_id,
+                SimTime::new(1_704_067_260, MarketTimeZone::AsiaKolkata)
+            )
         );
 
         assert_eq!(
-            owned.get_bar_at_or_before(index_id, 1_704_067_245),
-            archived_view.get_bar_at_or_before(index_id, 1_704_067_245)
+            owned.get_bar_at_or_before(
+                index_id,
+                SimTime::new(1_704_067_245, MarketTimeZone::AsiaKolkata)
+            ),
+            archived_view.get_bar_at_or_before(
+                index_id,
+                SimTime::new(1_704_067_245, MarketTimeZone::AsiaKolkata)
+            )
         );
         assert_eq!(
-            owned.get_bar_at_or_before(option_id, 1_704_067_280),
-            archived_view.get_bar_at_or_before(option_id, 1_704_067_280)
+            owned.get_bar_at_or_before(
+                option_id,
+                SimTime::new(1_704_067_280, MarketTimeZone::AsiaKolkata)
+            ),
+            archived_view.get_bar_at_or_before(
+                option_id,
+                SimTime::new(1_704_067_280, MarketTimeZone::AsiaKolkata)
+            )
         );
 
         assert_eq!(

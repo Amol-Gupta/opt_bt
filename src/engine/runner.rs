@@ -310,8 +310,9 @@ fn is_market_hour(timestamp: i64) -> bool {
         return false;
     };
     let minutes = dt.hour() * 60 + dt.minute();
-    let market_open = 9 * 60 + 15;
-    let market_close = 15 * 60 + 30;
+    // NSE market hours: 09:15–15:30 IST = 03:45–10:00 UTC
+    let market_open = 3 * 60 + 45;
+    let market_close = 10 * 60;
     minutes >= market_open && minutes <= market_close
 }
 

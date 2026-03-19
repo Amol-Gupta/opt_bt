@@ -154,7 +154,7 @@ multiple lots.
 ```bash
 bt list-strategies \
   --project my_strategy \
-  --workspace /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws
+  --workspace /home/amol/opt_bt/demo_ws
 ```
 
 Expected output includes `nifty_premium_straddle`.
@@ -162,7 +162,7 @@ Expected output includes `nifty_premium_straddle`.
 ### Compile / sanity check
 
 ```bash
-cd /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws/projects/my_strategy/strategy
+cd /home/amol/opt_bt/demo_ws/projects/my_strategy/strategy
 cargo check
 ```
 
@@ -171,6 +171,12 @@ cargo check
 ## Strategy Code Walkthrough
 
 The strategy is implemented in:
+
+```
+demo_ws/projects/my_strategy/strategy/src/nifty_premium_straddle.rs
+```
+
+And registered/parameter-wired in:
 
 ```
 demo_ws/projects/my_strategy/strategy/src/my_strategy.rs
@@ -246,7 +252,7 @@ if ctx.position_qty(state.pe_id) < 0 {
 ```bash
 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws \
+  --workspace /home/amol/opt_bt/demo_ws \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
@@ -263,7 +269,7 @@ bt run \
 ```bash
 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws \
+  --workspace /home/amol/opt_bt/demo_ws \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
@@ -280,7 +286,7 @@ bt run \
 ```bash
 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws \
+  --workspace /home/amol/opt_bt/demo_ws \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --start-date 2023-01-01 \
@@ -323,7 +329,7 @@ This produces **3 × 3 × 2 × 2 = 36 backtests** covering different CP / SL / t
 ```bash
 bt sweep \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws \
+  --workspace /home/amol/opt_bt/demo_ws \
   --config    sweep_premium_straddle.json
 ```
 
@@ -343,7 +349,7 @@ demo_ws/projects/my_strategy/backtests/
 ```bash
 # Find the most recent backtest folder
 latest=$(ls -td \
-  /home/amol/opt_bt.worktrees/copilot-worktree-2026-03-18T16-44-10/demo_ws/projects/my_strategy/backtests/nifty_premium_straddle_* \
+  /home/amol/opt_bt/demo_ws/projects/my_strategy/backtests/nifty_premium_straddle_* \
   | head -1)
 
 echo "Report: $latest/report.html"

@@ -1,18 +1,29 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use opt_bt::common::context::Context;
 use opt_bt::common::event::{AlarmEvent, FillEvent, MarketEvent, OrderEvent, SignalEvent};
 use opt_bt::common::types::{OptionType, OrderType, Side, PRICE_SCALE};
 use opt_bt::strategy::Strategy;
-use std::collections::{BTreeMap, HashMap, HashSet};
+
+// ---------------------------------------------------------------------------
+// DailyState — per-day open positions and stop-loss order IDs
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-struct DailyState {
-    ce_id: u32,
-    pe_id: u32,
-    ce_stop_order_id: u64,
-    pe_stop_order_id: u64,
-    ce_open: bool,
-    pe_open: bool,
+pub(crate) struct DailyState {
+    pub ce_id: u32,
+    pub pe_id: u32,
+    pub ce_stop_order_id: u64,
+    pub pe_stop_order_id: u64,
+    pub ce_stop_price: i64,
+    pub pe_stop_price: i64,
+    pub ce_open: bool,
+    pub pe_open: bool,
 }
+
+// ---------------------------------------------------------------------------
+// AlgotestWeeklyStraddleStrategy
+// ---------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct AlgotestWeeklyStraddleStrategy {
@@ -159,6 +170,8 @@ impl AlgotestWeeklyStraddleStrategy {
                 pe_id,
                 ce_stop_order_id,
                 pe_stop_order_id,
+                ce_stop_price,
+                pe_stop_price,
                 ce_open: true,
                 pe_open: true,
             },
@@ -281,11 +294,7 @@ impl AlgotestWeeklyStraddleStrategy {
             .windows(2)
             .filter_map(|window| {
                 let gap = window[1] - window[0];
-                if gap > 0 {
-                    Some(gap)
-                } else {
-                    None
-                }
+                if gap > 0 { Some(gap) } else { None }
             })
             .min()
             .unwrap_or(50);

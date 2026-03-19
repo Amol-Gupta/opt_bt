@@ -226,9 +226,11 @@ impl Strategy for NiftyNearestExpiryStraddleStrategy {
 
         let day_key = event.timestamp.div_euclid(86_400);
         let seconds_of_day = event.timestamp.rem_euclid(86_400);
-        // 10:00 IST and 11:00 IST expressed in UTC seconds-of-day.
-        let entry_time = 4 * 60 * 60 + 30 * 60;
-        let exit_time = 5 * 60 * 60 + 30 * 60;
+        // Entry at 10:00 IST and exit at 11:00 IST.
+        // Timestamps in this codebase use IST wall-clock epoch values
+        // (matching the sample fixture encoding).
+        let entry_time = 10 * 60 * 60;
+        let exit_time = 11 * 60 * 60;
 
         if !self.entered_days.contains(&day_key)
             && seconds_of_day >= entry_time

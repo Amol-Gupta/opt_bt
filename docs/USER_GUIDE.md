@@ -5,9 +5,7 @@ High-performance event-driven options backtesting engine in Rust.
 
 ## Install from GitHub
 
-### Install (tag or commit)
-
-Copy and paste:
+For end users, install the CLI and engine binaries from GitHub:
 
 ```bash
 export OPT_BT_RELEASE_REPO="https://github.com/Amol-Gupta/opt_bt"
@@ -199,33 +197,43 @@ This is the recommended flow to create workspace, create strategy project, warm 
 
 ### 1) Create workspace
 ```bash
-bt workspace init --path ./demo_ws
+bt workspace init --path ./my_workspace
 ```
 
 ### 2) Create strategy project
 ```bash
-bt project init --workspace ./demo_ws my_strategy
+bt project init --workspace ./my_workspace my_strategy
 ```
 
-### 3) Implement/update strategy code
-Edit project strategy crate files (for example):
-- `demo_ws/projects/my_strategy/strategy/src/my_strategy.rs`
+### 3) Implement strategy code
+Edit project strategy crate:
+- `./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs`
 
-Optional sanity checks:
+If using example strategies, download them from GitHub:
+
 ```bash
-cargo check --bin bt
-cd demo_ws/projects/my_strategy/strategy && cargo check
+# Download the registration code
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/demo_ws/projects/my_strategy/strategy/src/my_strategy.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs
+
+# Download example implementations (nifty_straddle.rs, nifty_premium_straddle.rs, nifty_straddle_portfolio.rs)
+# See TUTORIAL_PREMIUM_STRADDLE.md or PORTFOLIO_STRATEGY_TUTORIAL.md for download links
+```
+
+Verify compilation:
+```bash
+cd ./my_workspace/projects/my_strategy/strategy && cargo check
 ```
 
 ### 4) Configure run defaults
 Edit:
-- `demo_ws/projects/my_strategy/bt.toml`
+- `./my_workspace/projects/my_strategy/bt.toml`
 
 Set at least:
+- `[run].data = "/quant/nifty_with_options_01Jan2023_06Mar2026.parquet"`
+- `[run].start_date` and `[run].end_date`
 - `[run].default_strategy`
-- `[run].data`
-- `[run].start_date`
-- `[run].end_date`
+- `[run].initial_capital` (e.g. 500000 for naked short straddle)
 - `[run].benchmark` (optional; default `NIFTY 50`)
 
 ### 5) Start cache server (terminal A)
@@ -236,8 +244,9 @@ bt cache server --bind 127.0.0.1:7878
 ### 6) Warm cache (terminal B)
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --project my_strategy \
-  --workspace ./demo_ws
+  --workspace ./my_workspace
 ```
 
 Optional cache inspection:
@@ -250,38 +259,38 @@ Using config defaults from `bt.toml`:
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy my_strategy
 ```
 
-Or override data/date directly:
+Or override on the CLI:
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy my_strategy \
-  --data /quant/nifty_with_options.parquet \
   --start-date 2024-01-01 \
-  --end-date 2024-01-05
+  --end-date 2024-01-31
 ```
 
 ### 8) See results
 Latest run folder:
 ```bash
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/my_strategy_* | head -1)
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/my_strategy_* | head -1)
 echo "$latest"
 ```
 
 Inspect logs and report:
 ```bash
 head -n 20 "$latest/engine.log"
-jq '.runtime_timing' "$latest/report.json"
+jq '.metrics' "$latest/report.json"
 ```
 
 ### 9) (Optional) Evict and re-warm
 ```bash
-BT_CACHE_ADDR=127.0.0.1:7878 bt cache evict --data /quant/nifty_with_options.parquet
-BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm --project my_strategy --workspace ./demo_ws
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache evict --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
+  --project my_strategy --workspace ./my_workspace
 ```
 
 ## Strategy lifecycle hooks
@@ -328,17 +337,52 @@ cd /home/amol/opt_bt
 bt list-strategies --project my_strategy --workspace ./demo_ws
 ```
 
-### 4) Run your strategy
+### 4) Configure data + date range
+
+`bt project init` scaffolds `bt.toml` without a date range, so before your first run you must either:
+
+- edit `demo_ws/projects/my_strategy/bt.toml` and set `[run].data`, `[run].start_date`, and `[run].end_date`, or
+- pass `--data`, `--start-date`, and `--end-date` on the CLI.
+
+### 5) Start cache server and warm the dataset
+
+`bt run` is cache-backed. Start the cache server in one terminal:
 
 ```bash
-bt run \
-  --project my_strategy \
-  --workspace ./demo_ws \
-  --strategy my_strategy \
-  --data ./sample_data/niftyIndex2024.sample.parquet
+bt cache server --bind 127.0.0.1:7878
 ```
 
-### 5) Add tests
+Warm the dataset in another terminal:
+
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
+  --project my_strategy \
+  --workspace ./my_workspace
+```
+
+### 6) Run your strategy
+
+If you already set `[run].data`, `[run].start_date`, and `[run].end_date` in `bt.toml`:
+
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
+  --project my_strategy \
+  --workspace ./my_workspace
+```
+
+Or run with explicit overrides:
+
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
+  --project my_strategy \
+  --workspace ./my_workspace \
+  --strategy my_strategy \
+  --start-date 2024-01-01 \
+  --end-date 2024-01-31
+```
+
+### 7) Add tests
 
 See [Contributing Guide](CONTRIBUTING.md#integration-testing) for test guidance and reference examples.
 

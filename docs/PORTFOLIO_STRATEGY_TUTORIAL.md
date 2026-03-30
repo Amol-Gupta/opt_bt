@@ -3,6 +3,7 @@
 ## Table of Contents
 
 1. [Concept: What Is a Portfolio of Strategies?](#1-concept-what-is-a-portfolio-of-strategies)
+5. [Project Setup / Download Strategies](#5-project-setup--download-strategies)
 2. [The Strategy: Nifty ATM Short Straddle with Stop Loss](#2-the-strategy-nifty-atm-short-straddle-with-stop-loss)
 3. [Strategy Parameters](#3-strategy-parameters)
 4. [Three Time Windows](#4-three-time-windows)
@@ -125,6 +126,70 @@ Each window is **non-overlapping** so the three strategies never hold the same c
 ---
 
 ## 5. Step-by-Step: Running Individual Strategies
+## Project Setup / Download Strategies
+
+### For cargo-install users (without repository access)
+
+Scaffold a fresh project:
+
+```bash
+bt workspace init --path ./my_workspace
+bt project init --workspace ./my_workspace my_strategy
+```
+
+Download the strategy files from GitHub:
+
+```bash
+# Download the registration / factory code
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs
+
+# Download the ATM straddle with stop-loss implementation
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/./my_workspace/projects/my_strategy/strategy/src/nifty_straddle.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/nifty_straddle.rs
+
+# Download the portfolio wrapper
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/./my_workspace/projects/my_strategy/strategy/src/nifty_straddle_portfolio.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/nifty_straddle_portfolio.rs
+```
+
+Update `Cargo.toml` in the strategy crate:
+
+```bash
+cd ./my_workspace/projects/my_strategy/strategy
+# Add chrono dependency (required by strategies)
+# Edit Cargo.toml and add: chrono = "0.4" under [dependencies]
+cargo check
+```
+
+Update `bt.toml` in the project:
+
+```toml
+[run]
+data = "/quant/nifty_with_options_01Jan2023_06Mar2026.parquet"
+start_date = "2024-04-01"
+end_date = "2024-05-31"
+default_strategy = "nifty_straddle_portfolio"
+initial_capital = 500000
+
+[run.params]
+qty = "25"
+sl_pct = "0.20"
+```
+
+Verify strategy discovery:
+
+```bash
+bt list-strategies --project my_strategy --workspace ./my_workspace
+```
+
+You should see `nifty_straddle_portfolio` (and `nifty_straddle_sl` if running the individual strategies).
+
+### For repo developers
+
+If you have the full repository cloned, the strategies are already registered in `./my_workspace/projects/my_strategy`. You can run them directly or copy files as above.
+
+---
 
 ### Prerequisites
 
@@ -148,9 +213,9 @@ bt cache server --bind 127.0.0.1:7878
 BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm \
   --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
   --project my_strategy \
-  --workspace ./demo_ws \
-  --start-date 2023-01-01 \
-  --end-date 2026-03-06
+  --workspace ./my_workspace \
+  --start-date 2024-04-01 \
+  --end-date 2024-05-31
 ```
 
 Verify the cache is warm:
@@ -164,11 +229,11 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt cache status
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy nifty_straddle_sl \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 \
+  --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.20 --params entry_seconds=34200 --params exit_seconds=41400
 ```
 
@@ -177,11 +242,11 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy nifty_straddle_sl \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 \
+  --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.20 --params entry_seconds=41400 --params exit_seconds=48600
 ```
 
@@ -190,11 +255,11 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy nifty_straddle_sl \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 \
+  --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.20 --params entry_seconds=48600 --params exit_seconds=54900
 ```
 
@@ -203,7 +268,7 @@ BT_CACHE_ADDR=127.0.0.1:7878 bt run \
 Each `bt run` prints the path to a per-run backtest folder. To open the HTML report for the most recent run:
 
 ```bash
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_sl_* | head -1)
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_sl_* | head -1)
 echo "Report: $latest/report.html"
 # On Linux:
 xdg-open "$latest/report.html"
@@ -220,7 +285,7 @@ jq '{sharpe: .metrics.sharpe_ratio,
 
 ---
 
-## 6. Step-by-Step: Running the Portfolio
+## 7. Step-by-Step: Running the Portfolio
 
 The portfolio runs all three windows in a single command. The engine tracks each sub-strategy separately and produces aggregated portfolio metrics.
 
@@ -231,18 +296,18 @@ The portfolio runs all three windows in a single command. The engine tracks each
 ```bash
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project my_strategy \
-  --workspace ./demo_ws \
+  --workspace ./my_workspace \
   --strategy nifty_straddle_portfolio \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 \
+  --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.20
 ```
 
 ### 6.3 View portfolio results
 
 ```bash
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_portfolio_* | head -1)
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_portfolio_* | head -1)
 echo "Report: $latest/report.html"
 xdg-open "$latest/report.html"
 ```
@@ -257,7 +322,7 @@ This shows per-strategy PnL, trade count, win rate and Sharpe ratio for `morning
 
 ---
 
-## 7. Comparing Results
+## 8. Comparing Results
 
 ### Side-by-side metric extraction
 
@@ -265,19 +330,19 @@ Run this after completing all four backtests (the three individual runs + the po
 
 ```bash
 echo "=== Morning Straddle ==="
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '3p')
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '3p')
 jq '{sharpe:.metrics.sharpe_ratio, max_dd_pct:.metrics.max_drawdown_pct, total_return_pct:.metrics.total_return_pct, round_trips:.metrics.round_trip_trade_count}' "$latest/report.json"
 
 echo "=== Midday Straddle ==="
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '2p')
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '2p')
 jq '{sharpe:.metrics.sharpe_ratio, max_dd_pct:.metrics.max_drawdown_pct, total_return_pct:.metrics.total_return_pct, round_trips:.metrics.round_trip_trade_count}' "$latest/report.json"
 
 echo "=== Afternoon Straddle ==="
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '1p')
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_sl_* | sed -n '1p')
 jq '{sharpe:.metrics.sharpe_ratio, max_dd_pct:.metrics.max_drawdown_pct, total_return_pct:.metrics.total_return_pct, round_trips:.metrics.round_trip_trade_count}' "$latest/report.json"
 
 echo "=== Portfolio ==="
-latest=$(ls -td demo_ws/projects/my_strategy/backtests/nifty_straddle_portfolio_* | head -1)
+latest=$(ls -td ./my_workspace/projects/my_strategy/backtests/nifty_straddle_portfolio_* | head -1)
 jq '{sharpe:.metrics.sharpe_ratio, max_dd_pct:.metrics.max_drawdown_pct, total_return_pct:.metrics.total_return_pct, round_trips:.metrics.round_trip_trade_count}' "$latest/report.json"
 ```
 
@@ -297,35 +362,35 @@ Re-run with tighter or wider stop loss to understand the risk/reward trade-off:
 ```bash
 # Tight stop (10%)
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
-  --project my_strategy --workspace ./demo_ws \
+  --project my_strategy --workspace ./my_workspace \
   --strategy nifty_straddle_portfolio \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.10
 
 # Wide stop (50%)
 BT_CACHE_ADDR=127.0.0.1:7878 bt run \
-  --project my_strategy --workspace ./demo_ws \
+  --project my_strategy --workspace ./my_workspace \
   --strategy nifty_straddle_portfolio \
-  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 --end-date 2026-03-06 \
+  --data /quant/nifty_with_options_01Jan2023_06Mar2026.parquet
+  --start-date 2024-04-01 --end-date 2024-05-31 \
   --params qty=25 --params sl_pct=0.50
 ```
 
 ---
 
-## 8. Full Command Reference
+## 9. Full Command Reference
 
 | Command | Purpose |
 |---|---|
 | `bt cache server --bind 127.0.0.1:7878` | Start in-memory cache server |
-| `BT_CACHE_ADDR=... bt cache warm --data <path> --project my_strategy --workspace ./demo_ws --start-date ... --end-date ...` | Load parquet into cache |
+| `BT_CACHE_ADDR=... bt cache warm --data <path> --project my_strategy --workspace ./my_workspace --start-date ... --end-date ...` | Load parquet into cache |
 | `BT_CACHE_ADDR=... bt cache status` | Inspect what's in cache |
-| `BT_CACHE_ADDR=... bt run --project my_strategy --workspace ./demo_ws --strategy nifty_straddle_sl --data <path> --start-date ... --end-date ... --params qty=25 --params sl_pct=0.20 --params entry_seconds=34200 --params exit_seconds=41400` | Single straddle strategy (morning window, 09:30–11:30 IST) |
+| `BT_CACHE_ADDR=... bt run --project my_strategy --workspace ./my_workspace --strategy nifty_straddle_sl --data <path> --start-date ... --end-date ... --params qty=25 --params sl_pct=0.20 --params entry_seconds=34200 --params exit_seconds=41400` | Single straddle strategy (morning window, 09:30–11:30 IST) |
 | `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=41400 --params exit_seconds=48600` | Single straddle (midday, 11:30–13:30 IST) |
 | `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_sl --params qty=25 --params sl_pct=0.20 --params entry_seconds=48600 --params exit_seconds=54900` | Single straddle (afternoon, 13:30–15:15 IST) |
 | `BT_CACHE_ADDR=... bt run ... --strategy nifty_straddle_portfolio --params qty=25 --params sl_pct=0.20` | Combined portfolio (all three windows) |
-| `bt list-strategies --project my_strategy --workspace ./demo_ws` | List all registered strategies |
+| `bt list-strategies --project my_strategy --workspace ./my_workspace` | List all registered strategies |
 
 ### IST seconds reference
 
@@ -349,7 +414,7 @@ All `entry_seconds` / `exit_seconds` values are **seconds from midnight IST** (m
 ## 9. Verified Results (Jan 2023 – Mar 2026, qty=25, sl_pct=20%)
 
 The following results were produced by running the four backtests above against
-`/quant/nifty_with_options_01Jan2023_06Mar2026.parquet`.
+`/quant/nifty_with_options_01Jan2023_06Mar2026.parquet
 
 | Strategy | Entry (IST) | Exit (IST) | Fills | P&L (₹) | entry_seconds | exit_seconds |
 |---|---|---|---|---|---|---|

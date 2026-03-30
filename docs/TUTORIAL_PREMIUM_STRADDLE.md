@@ -135,8 +135,72 @@ This lets you control the exact credit received per leg, which directly determin
 
 ## Project Setup
 
-The `nifty_premium_straddle` strategy is registered in the existing `my_strategy` project under
-`demo_ws`.  No additional scaffold step is required.
+### For cargo-install users (without repository access)
+
+Scaffold a fresh project:
+
+```bash
+bt workspace init --path ./my_workspace
+bt project init --workspace ./my_workspace my_strategy
+```
+
+Download the strategy files from GitHub:
+
+```bash
+# Download the registration / factory code
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/demo_ws/projects/my_strategy/strategy/src/my_strategy.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs
+
+# Download the premium straddle implementation
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/demo_ws/projects/my_strategy/strategy/src/nifty_premium_straddle.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/nifty_premium_straddle.rs
+
+# Optional: Download helper strategies
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/demo_ws/projects/my_strategy/strategy/src/nifty_straddle.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/nifty_straddle.rs
+
+curl https://raw.githubusercontent.com/Amol-Gupta/opt_bt/main/demo_ws/projects/my_strategy/strategy/src/nifty_straddle_portfolio.rs \
+  -o ./my_workspace/projects/my_strategy/strategy/src/nifty_straddle_portfolio.rs
+```
+
+Update `Cargo.toml` in the strategy crate:
+
+```bash
+cd ./my_workspace/projects/my_strategy/strategy
+# Add chrono dependency (required by strategies)
+# Edit Cargo.toml and add: chrono = "0.4" under [dependencies]
+cargo check
+```
+
+Update `bt.toml` in the project:
+
+```toml
+[run]
+data = "/quant/nifty_with_options_01Jan2023_06Mar2026.parquet"
+start_date = "2024-01-04"
+end_date = "2024-01-04"
+default_strategy = "nifty_premium_straddle"
+initial_capital = 500000
+
+[run.params]
+qty = "65"
+sl_pct = "0.20"
+target_premium = "100"
+entry_seconds = "39600"
+exit_seconds = "54900"
+```
+
+Verify strategy discovery:
+
+```bash
+bt list-strategies --project my_strategy --workspace ./my_workspace
+```
+
+You should see `nifty_premium_straddle` in the output.
+
+### For repo developers
+
+If you have the full repository cloned, the `nifty_premium_straddle` strategy is already registered in `demo_ws/projects/my_strategy`. You can run it directly or copy files as above.
 
 ### Capital requirement
 
@@ -146,25 +210,21 @@ Selling a Nifty short straddle (1 CE + 1 PE, naked) requires approximately **₹
 |------|---------------|-----------------|---------------------|
 | 1 lot short straddle (qty=65) | ₹2.2 lac | ₹4.4 lac | ₹5.0 lac |
 
-Use `initial_capital = 500000` in `bt.toml` (or pass via CLI) for 1 lot.  Scale linearly for
-multiple lots.
-
-
-
-```bash
-bt list-strategies \
-  --project my_strategy \
-  --workspace /home/amol/opt_bt/demo_ws
-```
-
-Expected output includes `nifty_premium_straddle`.
+Use `initial_capital = 500000` in `bt.toml` (or pass via CLI) for 1 lot.  Scale linearly for multiple lots.
 
 ### Compile / sanity check
 
 ```bash
-cd /home/amol/opt_bt/demo_ws/projects/my_strategy/strategy
-cargo check
+cd ./my_workspace/projects/my_strategy/strategy && cargo check
 ```
+
+Verify strategy discovery:
+
+```bash
+bt list-strategies --project my_strategy --workspace ./my_workspace
+```
+
+Expected output includes `nifty_premium_straddle`.
 
 ---
 
@@ -173,13 +233,13 @@ cargo check
 The strategy is implemented in:
 
 ```
-demo_ws/projects/my_strategy/strategy/src/nifty_premium_straddle.rs
+./my_workspace/projects/my_strategy/strategy/src/nifty_premium_straddle.rs
 ```
 
 And registered/parameter-wired in:
 
 ```
-demo_ws/projects/my_strategy/strategy/src/my_strategy.rs
+./my_workspace/projects/my_strategy/strategy/src/my_strategy.rs
 ```
 
 ### Key struct
@@ -253,13 +313,13 @@ if ctx.position_qty(state.pe_id) < 0 {
 ### Example 1 — Default parameters (11:00 entry, 15:15 exit, ₹100 CP, 20 % SL)
 
 ```bash
-bt run \
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt/demo_ws \
+  --workspace ./my_workspace \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date   2026-03-06 \
+  --start-date 2024-01-04 \
+  --end-date   2024-01-04 \
   --params qty=65 \
   --params target_premium=100 \
   --params sl_pct=0.20 \
@@ -270,13 +330,13 @@ bt run \
 ### Example 2 — 9:30 entry, 15:25 exit, ₹150 CP, 30 % SL
 
 ```bash
-bt run \
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt/demo_ws \
+  --workspace ./my_workspace \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date   2026-03-06 \
+  --start-date 2024-01-04 \
+  --end-date   2024-01-04 \
   --params qty=65 \
   --params target_premium=150 \
   --params sl_pct=0.30 \
@@ -287,13 +347,13 @@ bt run \
 ### Example 3 — 10:00 entry, 15:29 exit, ₹80 CP, 40 % SL
 
 ```bash
-bt run \
+BT_CACHE_ADDR=127.0.0.1:7878 bt run \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt/demo_ws \
+  --workspace ./my_workspace \
   --strategy  nifty_premium_straddle \
   --data      /quant/nifty_with_options_01Jan2023_06Mar2026.parquet \
-  --start-date 2023-01-01 \
-  --end-date   2026-03-06 \
+  --start-date 2024-01-04 \
+  --end-date   2024-01-04 \
   --params qty=65 \
   --params target_premium=80 \
   --params sl_pct=0.40 \
@@ -313,8 +373,8 @@ Use `bt sweep` with a JSON config to run many parameter combinations in one shot
 {
   "strategy": "nifty_premium_straddle",
   "data": "/quant/nifty_with_options_01Jan2023_06Mar2026.parquet",
-  "start_date": "2023-01-01",
-  "end_date":   "2026-03-06",
+  "start_date": "2024-01-04",
+  "end_date":   "2024-01-31",
   "params": {
     "qty":            ["65"],
     "target_premium": ["80", "100", "150"],
@@ -330,16 +390,17 @@ This produces **3 × 3 × 2 × 2 = 36 backtests** covering different CP / SL / t
 ### Run the sweep
 
 ```bash
+BT_CACHE_ADDR=127.0.0.1:7878 \
 bt sweep \
   --project   my_strategy \
-  --workspace /home/amol/opt_bt/demo_ws \
+  --workspace ./my_workspace \
   --config    sweep_premium_straddle.json
 ```
 
 Results land in:
 
 ```
-demo_ws/projects/my_strategy/backtests/
+./my_workspace/projects/my_strategy/backtests/
 └── nifty_premium_straddle_<timestamp>_<run_id>/
     ├── report.json
     └── report.html
@@ -352,7 +413,7 @@ demo_ws/projects/my_strategy/backtests/
 ```bash
 # Find the most recent backtest folder
 latest=$(ls -td \
-  /home/amol/opt_bt/demo_ws/projects/my_strategy/backtests/nifty_premium_straddle_* \
+  /home/amol/opt_bt/./my_workspace/projects/my_strategy/backtests/nifty_premium_straddle_* \
   | head -1)
 
 echo "Report: $latest/report.html"

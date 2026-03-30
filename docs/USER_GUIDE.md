@@ -5,22 +5,53 @@ High-performance event-driven options backtesting engine in Rust.
 
 ## Install from GitHub
 
-For end users, install the CLI and engine binaries from GitHub:
+### Install (tag or commit)
+
+Copy and paste:
 
 ```bash
 export OPT_BT_RELEASE_REPO="https://github.com/Amol-Gupta/opt_bt"
 export OPT_BT_RELEASE_REV="<tag-or-commit>"
 
 cargo install \
-  --git https://github.com/Amol-Gupta/opt_bt \
+  --git "$OPT_BT_RELEASE_REPO" \
   --rev "$OPT_BT_RELEASE_REV" \
   --bin bt \
   --bin opt_bt \
+  opt_bt \
   --force
 ```
 
+### Install latest commit from a branch
+
+Copy and paste:
+
+```bash
+export OPT_BT_RELEASE_REPO="https://github.com/Amol-Gupta/opt_bt"
+export OPT_BT_RELEASE_BRANCH="main"
+
+cargo install \
+  --git "$OPT_BT_RELEASE_REPO" \
+  --branch "$OPT_BT_RELEASE_BRANCH" \
+  --bin bt \
+  --bin opt_bt \
+  opt_bt \
+  --force
+```
+
+### Uninstall
+
+Copy and paste:
+
+```bash
+cargo uninstall opt_bt
+```
+
 Notes:
+- `opt_bt` (positional crate name) is required because the repo contains multiple packages with binaries (e.g. demo workspace projects); without it cargo cannot determine which package to install
+- do not use `--package opt_bt` with `cargo install`; for git installs, cargo expects the package name as a positional argument
 - install both `bt` and `opt_bt`; the `bt` CLI uses `opt_bt` for built-in engine runs
+- `cargo uninstall opt_bt` removes both binaries installed from this package (`bt` and `opt_bt`)
 - use a tag or commit SHA for `OPT_BT_RELEASE_REV`; a branch name works for testing, but tags/commits are safer
 - make sure `~/.cargo/bin` is on `PATH`
 

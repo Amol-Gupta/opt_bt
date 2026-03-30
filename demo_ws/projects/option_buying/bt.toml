@@ -1,0 +1,19 @@
+[project]
+name = "option_buying"
+
+[engine]
+path = "/home/amol/opt_bt"
+bin = "opt_bt"
+
+[run]
+default_strategy = "option_buying"
+data = "/quant/nifty_with_options_01Jan2023_06Mar2026.parquet"
+log_time_mode = "simulation"
+benchmark = "NIFTY 50"
+initial_capital = 1000000
+
+[run.params]
+csv_folder = "/quant/penny_options/tuned/DTE8_CR30_DN60_DW40_DC40"
+
+[strategy_registry]
+stage1_fallback = true

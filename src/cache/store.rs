@@ -70,33 +70,22 @@ impl CacheStore {
     pub fn ensure_loaded(
         &mut self,
         path: &str,
-        start_ts: Option<i64>,
-        end_ts: Option<i64>,
+        _start_ts: Option<i64>,
+        _end_ts: Option<i64>,
     ) -> Result<EnsureLoadedResult> {
         let fingerprint =
             build_dataset_fingerprint(std::path::Path::new(path), self.include_sha256)?;
-        let key = cache_key_for(&fingerprint, start_ts, end_ts);
+        let key = cache_key_for(&fingerprint, None, None);
 
         if let Some(existing) = self.lookup_by_key(&key) {
             return Ok(existing);
         }
 
         let started = Instant::now();
-        let market_data = if let (Some(start), Some(end)) = (start_ts, end_ts) {
-            DataLoader::load_parquet_range(path, start, end)?
-        } else {
-            DataLoader::load_parquet(path)?
-        };
+        let market_data = DataLoader::load_parquet(path)?;
         let load_ms = started.elapsed().as_millis();
 
-        self.insert_loaded_with_fingerprint(
-            key,
-            fingerprint,
-            start_ts,
-            end_ts,
-            market_data,
-            load_ms,
-        )
+        self.insert_loaded_with_fingerprint(key, fingerprint, None, None, market_data, load_ms)
     }
 
     pub fn reserve_generation(&mut self) -> u64 {
@@ -226,12 +215,8 @@ impl CacheStore {
 
 fn cache_key_for(
     fingerprint: &DatasetFingerprint,
-    start_ts: Option<i64>,
-    end_ts: Option<i64>,
+    _start_ts: Option<i64>,
+    _end_ts: Option<i64>,
 ) -> String {
-    if let (Some(start), Some(end)) = (start_ts, end_ts) {
-        format!("{}:{}:{}", fingerprint.key(), start, end)
-    } else {
-        fingerprint.key()
-    }
+    fingerprint.key()
 }

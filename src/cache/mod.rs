@@ -122,11 +122,7 @@ fn process_ensure_request(
 
     let fingerprint_started = Instant::now();
     let fingerprint = build_dataset_fingerprint(std::path::Path::new(path), include_sha256)?;
-    let key = if let (Some(start), Some(end)) = (start_ts, end_ts) {
-        format!("{}:{}:{}", fingerprint.key(), start, end)
-    } else {
-        fingerprint.key()
-    };
+    let key = fingerprint.key();
     if debug_progress {
         eprintln!(
             "bt cache-server ensure fingerprint_done key={} elapsed_ms={} total_ms={}",
@@ -189,8 +185,8 @@ fn process_ensure_request(
 
         let entry = CacheEntry {
             fingerprint,
-            start_ts,
-            end_ts,
+            start_ts: None,
+            end_ts: None,
             loaded_at_unix_secs: metadata.loaded_at_unix_secs,
             instrument_count: metadata.instrument_count,
             bar_count: metadata.bar_count,
@@ -215,11 +211,7 @@ fn process_ensure_request(
     }
 
     let started = Instant::now();
-    let loaded_data = if let (Some(start), Some(end)) = (start_ts, end_ts) {
-        DataLoader::load_parquet_range(path, start, end)?
-    } else {
-        DataLoader::load_parquet(path)?
-    };
+    let loaded_data = DataLoader::load_parquet(path)?;
     let load_ms = started.elapsed().as_millis();
     if debug_progress {
         eprintln!(
@@ -270,8 +262,8 @@ fn process_ensure_request(
 
     let entry = CacheEntry {
         fingerprint,
-        start_ts,
-        end_ts,
+        start_ts: None,
+        end_ts: None,
         loaded_at_unix_secs: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

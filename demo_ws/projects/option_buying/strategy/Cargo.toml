@@ -1,0 +1,16 @@
+[package]
+name = "option_buying"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/option_buying.rs"
+
+[dependencies]
+opt_bt = { path = "/home/amol/opt_bt" }
+bt_strategy_sdk = { path = "/home/amol/opt_bt/crates/bt_strategy_sdk" }
+bt_strategy_macros = { path = "/home/amol/opt_bt/crates/bt_strategy_macros" }
+serde_json = "1"
+log = "0.4"
+csv = "1"
+chrono = "0.4"

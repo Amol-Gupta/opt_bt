@@ -2,7 +2,7 @@
 name = "my_strategy"
 
 [engine]
-path = "/home/amol/opt_bt"
+path = "../../.."
 bin = "opt_bt"
 
 [run]

@@ -1272,21 +1272,22 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
     fs::create_dir_all(project_root.join("strategy/src"))?;
     fs::create_dir_all(project_root.join("generated"))?;
 
+    const ENGINE_PATH: &str = env!("OPT_BT_ENGINE_PATH");
+    let engine_path_value = if ENGINE_PATH.is_empty() {
+        None
+    } else {
+        let engine_path = Path::new(ENGINE_PATH);
+        let relative = relative_path_from(&project_root, engine_path)
+            .unwrap_or_else(|| engine_path.to_path_buf());
+        Some(path_for_toml(&relative))
+    };
+
     let project_file = ProjectFile {
         project: ProjectSection {
             name: args.name.clone(),
         },
         engine: Some(EngineSection {
-            path: {
-                // Baked by build.rs: non-empty for source builds, empty for
-                // `cargo install --git ...` builds where the engine is on PATH.
-                const ENGINE_PATH: &str = env!("OPT_BT_ENGINE_PATH");
-                if ENGINE_PATH.is_empty() {
-                    None
-                } else {
-                    Some(ENGINE_PATH.to_string())
-                }
-            },
+            path: engine_path_value,
             bin: Some("opt_bt".to_string()),
         }),
         run: Some(RunSection {
@@ -1313,11 +1314,37 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
     )?;
 
     fs::write(project_root.join("strategy/Cargo.toml"), {
-        // Dep specs are baked in by build.rs: path deps for source builds,
-        // git deps for `cargo install --git ...` builds.
-        let dep_root = env!("OPT_BT_DEP_ROOT");
-        let dep_sdk = env!("OPT_BT_DEP_SDK");
-        let dep_macros = env!("OPT_BT_DEP_MACROS");
+        // In source/dev mode, generate relative path deps to keep projects
+        // portable across developer machines. In release/install mode,
+        // build.rs bakes git deps and ENGINE_PATH is empty.
+        let strategy_dir = project_root.join("strategy");
+        let (dep_root, dep_sdk, dep_macros) = if ENGINE_PATH.is_empty() {
+            (
+                env!("OPT_BT_DEP_ROOT").to_string(),
+                env!("OPT_BT_DEP_SDK").to_string(),
+                env!("OPT_BT_DEP_MACROS").to_string(),
+            )
+        } else {
+            let engine_root = Path::new(ENGINE_PATH);
+            let root_rel = relative_path_from(&strategy_dir, engine_root)
+                .unwrap_or_else(|| engine_root.to_path_buf());
+            let sdk_rel = relative_path_from(&strategy_dir, &engine_root.join("crates/bt_strategy_sdk"))
+                .unwrap_or_else(|| engine_root.join("crates/bt_strategy_sdk"));
+            let macros_rel =
+                relative_path_from(&strategy_dir, &engine_root.join("crates/bt_strategy_macros"))
+                    .unwrap_or_else(|| engine_root.join("crates/bt_strategy_macros"));
+            (
+                format!("opt_bt = {{ path = \"{}\" }}", path_for_toml(&root_rel)),
+                format!(
+                    "bt_strategy_sdk = {{ path = \"{}\" }}",
+                    path_for_toml(&sdk_rel)
+                ),
+                format!(
+                    "bt_strategy_macros = {{ path = \"{}\" }}",
+                    path_for_toml(&macros_rel)
+                ),
+            )
+        };
         format!(
                 "[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/{strategy_file_name}\"\n\n[dependencies]\n{dep_root}\n{dep_sdk}\n{dep_macros}\nserde_json = \"1\"\nlog = \"0.4\"\n",
                 crate_name = crate_name,
@@ -2590,6 +2617,42 @@ fn resolve_binary_from_path(name: &str) -> Result<PathBuf, DynError> {
          cargo install --git https://github.com/Amol-Gupta/opt_bt --bin {name}"
     )
     .into())
+}
+
+fn relative_path_from(base_dir: &Path, target: &Path) -> Option<PathBuf> {
+    let base = fs::canonicalize(base_dir).ok()?;
+    let target = fs::canonicalize(target).ok()?;
+
+    let base_components: Vec<_> = base.components().collect();
+    let target_components: Vec<_> = target.components().collect();
+
+    let mut common = 0usize;
+    while common < base_components.len()
+        && common < target_components.len()
+        && base_components[common] == target_components[common]
+    {
+        common += 1;
+    }
+
+    if common <= 1 {
+        return None;
+    }
+
+    let mut relative = PathBuf::new();
+    for _ in common..base_components.len() {
+        relative.push("..");
+    }
+    for component in target_components.iter().skip(common) {
+        relative.push(component.as_os_str());
+    }
+    if relative.as_os_str().is_empty() {
+        relative.push(".");
+    }
+    Some(relative)
+}
+
+fn path_for_toml(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn newest_mtime_recursive(path: &Path) -> Result<SystemTime, DynError> {

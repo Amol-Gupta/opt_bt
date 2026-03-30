@@ -68,10 +68,6 @@ For local development, see [Contributing Guide](CONTRIBUTING.md#development-mode
 
 ## `bt` CLI (workspace-oriented)
 
-Build once:
-```bash
-cargo build --release --bin bt
-```
 
 Show command help:
 ```bash

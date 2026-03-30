@@ -1328,11 +1328,14 @@ fn project_init(args: ProjectInitArgs) -> Result<(), DynError> {
             let engine_root = Path::new(ENGINE_PATH);
             let root_rel = relative_path_from(&strategy_dir, engine_root)
                 .unwrap_or_else(|| engine_root.to_path_buf());
-            let sdk_rel = relative_path_from(&strategy_dir, &engine_root.join("crates/bt_strategy_sdk"))
-                .unwrap_or_else(|| engine_root.join("crates/bt_strategy_sdk"));
-            let macros_rel =
-                relative_path_from(&strategy_dir, &engine_root.join("crates/bt_strategy_macros"))
-                    .unwrap_or_else(|| engine_root.join("crates/bt_strategy_macros"));
+            let sdk_rel =
+                relative_path_from(&strategy_dir, &engine_root.join("crates/bt_strategy_sdk"))
+                    .unwrap_or_else(|| engine_root.join("crates/bt_strategy_sdk"));
+            let macros_rel = relative_path_from(
+                &strategy_dir,
+                &engine_root.join("crates/bt_strategy_macros"),
+            )
+            .unwrap_or_else(|| engine_root.join("crates/bt_strategy_macros"));
             (
                 format!("opt_bt = {{ path = \"{}\" }}", path_for_toml(&root_rel)),
                 format!(

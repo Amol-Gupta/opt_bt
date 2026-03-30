@@ -1,0 +1,172 @@
+{
+  "datasets": [
+    {
+      "source": "/quant/merged_data.parquet",
+      "output": "sample_data/merged_data.sample.parquet",
+      "rows": 4000,
+      "columns": [
+        "Ticker",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "timestamp"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64",
+        "timestamp": "Datetime(time_unit='ns', time_zone='UTC')"
+      },
+      "time_column": "timestamp",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "NIFTY18JAN2422600CE",
+        "NIFTY04JAN2423250CE",
+        "NIFTY25JAN2421100PE",
+        "NIFTY04JAN2419000PE",
+        "NIFTY04JAN2421400CE",
+        "NIFTY11JAN2423150CE",
+        "NIFTY04JAN2419800PE",
+        "NIFTY04JAN2421200PE",
+        "NIFTY29FEB2421700PE",
+        "NIFTY01FEB2423000CE"
+      ]
+    },
+    {
+      "source": "/quant/niftyIndex2024.parquet",
+      "output": "sample_data/niftyIndex2024.sample.parquet",
+      "rows": 2000,
+      "columns": [
+        "Ticker",
+        "DateTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "__index_level_0__"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "DateTime": "Datetime(time_unit='ns', time_zone=None)",
+        "Open": "Decimal(precision=7, scale=2)",
+        "High": "Decimal(precision=7, scale=2)",
+        "Low": "Decimal(precision=7, scale=2)",
+        "Close": "Decimal(precision=7, scale=2)",
+        "__index_level_0__": "Int64"
+      },
+      "time_column": "DateTime",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "NIFTY 50"
+      ]
+    },
+    {
+      "source": "/quant/sensex_index_final.parquet",
+      "output": "sample_data/sensex_index_final.sample.parquet",
+      "rows": 2000,
+      "columns": [
+        "Ticker",
+        "DateTime",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "__index_level_0__"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "DateTime": "Datetime(time_unit='ns', time_zone=None)",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64",
+        "__index_level_0__": "Int64"
+      },
+      "time_column": "DateTime",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "SENSEX"
+      ]
+    },
+    {
+      "source": "/quant/sensex_option_final.parquet",
+      "output": "sample_data/sensex_option_final.sample.parquet",
+      "rows": 2000,
+      "columns": [
+        "Ticker",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "timestamp"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64",
+        "timestamp": "Datetime(time_unit='ns', time_zone='UTC')"
+      },
+      "time_column": "timestamp",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "SENSEX01DEC2364700CE",
+        "SENSEX01DEC2364000PE",
+        "SENSEX01DEC2365500PE",
+        "SENSEX01DEC2365700PE",
+        "SENSEX01DEC2365800PE"
+      ]
+    },
+    {
+      "source": "composed:/quant/niftyIndex2024.parquet+/quant/merged_data.parquet",
+      "output": "sample_data/nifty_with_options.sample.parquet",
+      "rows": 264001,
+      "columns": [
+        "Ticker",
+        "timestamp",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "schema": {
+        "Ticker": "String",
+        "timestamp": "Datetime(time_unit='ns', time_zone=None)",
+        "Open": "Float64",
+        "High": "Float64",
+        "Low": "Float64",
+        "Close": "Float64"
+      },
+      "time_column": "timestamp",
+      "symbol_column": "Ticker",
+      "selected_symbols": [
+        "NIFTY05DEC2424300CE",
+        "NIFTY05DEC2424200CE",
+        "NIFTY05DEC2424500CE",
+        "NIFTY26DEC2424000PE",
+        "NIFTY05DEC2424400CE",
+        "NIFTY26DEC2424500CE",
+        "NIFTY05DEC2423500PE",
+        "NIFTY05DEC2423000PE",
+        "NIFTY05DEC2424000CE",
+        "NIFTY26DEC2423500PE",
+        "NIFTY26DEC2424000CE",
+        "NIFTY05DEC2424600CE",
+        "NIFTY05DEC2423700PE",
+        "NIFTY26DEC2425000CE",
+        "NIFTY05DEC2423800PE",
+        "NIFTY05DEC2424100CE",
+        "NIFTY05DEC2423600PE",
+        "NIFTY05DEC2423400PE",
+        "NIFTY05DEC2423300PE",
+        "NIFTY05DEC2424700CE"
+      ],
+      "unique_symbols": 21,
+      "anchor_timestamp": "2024-11-28 15:28:59"
+    }
+  ]
+}

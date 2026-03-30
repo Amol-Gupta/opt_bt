@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Backtest Report Schema",
+  "type": "object",
+  "properties": {
+    "reproducibility": {
+      "type": "object",
+      "description": "Metadata required to reproduce this exact backtest result",
+      "properties": {
+        "engine_version": { "type": "string", "description": "Git commit hash or release tag of the backtesting engine" },
+        "strategy_version": { "type": "string", "description": "Git commit hash or release tag of the strategy code" },
+        "strategy_name": { "type": "string" },
+        "parameters": { "type": "object", "description": "All strategy parameter values used", "additionalProperties": true },
+        "config": { "type": "object", "description": "Complete engine configuration state (slippage model, fill logic, etc.)", "additionalProperties": true },
+        "dataset": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string", "description": "Data source identifier (e.g., nse-options-2023)" },
+            "sha256": { "type": ["string", "null"], "description": "SHA256 checksum of the Parquet file(s); null when disabled" },
+            "granularity": { "type": "string", "description": "Bar granularity (e.g., 1min)" },
+            "start_date": { "type": "string", "format": "date" },
+            "end_date": { "type": "string", "format": "date" }
+          },
+          "required": ["start_date", "end_date"]
+        }
+      },
+      "required": ["engine_version", "parameters", "dataset"]
+    },
+    "simulation": {
+      "type": "object",
+      "properties": {
+        "start_time": { "type": "string", "format": "date-time" },
+        "end_time": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "number" },
+        "instrument_count": { "type": "integer" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "benchmark_symbol": { "type": "string" },
+        "benchmark_available": { "type": "boolean" },
+        "total_orders": { "type": "integer" },
+        "average_win_pct": { "type": "number" },
+        "average_loss_pct": { "type": "number" },
+        "compounding_annual_return_pct": { "type": "number" },
+        "expectancy": { "type": "number" },
+        "total_return_pct": { "type": "number" },
+        "cagr_pct": { "type": "number" },
+        "start_equity": { "type": "number" },
+        "end_equity": { "type": "number" },
+        "sharpe_ratio": { "type": "number", "description": "Annualized Sharpe Ratio (risk-free rate: 5%)" },
+        "sortino_ratio": { "type": "number", "description": "Annualized Sortino Ratio (risk-free rate: 5%)" },
+        "probabilistic_sharpe_ratio_pct": { "type": "number" },
+        "max_drawdown_pct": { "type": "number" },
+        "fill_count": { "type": "integer" },
+        "round_trip_trade_count": { "type": "integer", "description": "Closed lifecycle count for risk analytics" },
+        "win_rate_pct": { "type": "number" },
+        "loss_rate_pct": { "type": "number" },
+        "profit_loss_ratio": { "type": "number" },
+        "profit_factor": { "type": "number", "description": "Gross Profit / Gross Loss" },
+        "annual_standard_deviation": { "type": "number" },
+        "annual_variance": { "type": "number" },
+        "alpha": { "type": "number" },
+        "beta": { "type": "number" },
+        "information_ratio": { "type": "number" },
+        "tracking_error": { "type": "number" },
+        "treynor_ratio": { "type": "number" },
+        "margin_utilization_pct": { "type": "number" },
+        "estimated_strategy_capacity": { "type": ["number", "null"] },
+        "lowest_capacity_asset": { "type": ["string", "null"] },
+        "total_fees": { "type": "number" },
+        "portfolio_turnover_pct": { "type": "number" },
+        "drawdown_recovery": { "type": "integer" },
+        "final_cash_balance": { "type": "number" }
+      },
+      "required": ["total_return_pct", "max_drawdown_pct", "sharpe_ratio"]
+    },
+
+    "fills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "order_id": { "type": "integer" },
+          "strategy_id": { "type": "string" },
+          "symbol": { "type": "string" },
+          "side": { "type": "string", "enum": ["Buy", "Sell"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "qty": { "type": "integer" },
+          "price": { "type": "number" },
+          "fee": { "type": "number" },
+          "stale_fill": { "type": "boolean", "description": "True if this fill was executed against stale data" }
+        },
+        "required": ["id", "order_id", "strategy_id", "symbol", "side", "timestamp", "qty", "price", "fee", "stale_fill"]
+      }
+    },
+
+    "order_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "order_id": { "type": "integer" },
+          "strategy_id": { "type": "string" },
+          "instrument_id": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "order_type": { "type": "string", "enum": ["Market", "Limit", "Stop"] },
+          "side": { "type": "string", "enum": ["Buy", "Sell"] },
+          "qty": { "type": "integer" },
+          "limit_price": { "type": ["number", "null"] },
+          "status": { "type": "string" }
+        },
+        "required": ["id", "order_id", "strategy_id", "instrument_id", "symbol", "timestamp", "order_type", "side", "qty", "status"]
+      }
+    },
+
+    "position_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "level": { "type": "string", "enum": ["instrument", "portfolio"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "strategy_id": { "type": "string" },
+          "instrument_id": { "type": ["integer", "null"] },
+          "symbol": { "type": ["string", "null"] },
+          "order_id": { "type": ["integer", "null"] },
+          "fill_id": { "type": ["integer", "null"] },
+          "side": { "type": ["string", "null"] },
+          "fill_qty": { "type": ["integer", "null"] },
+          "fill_price": { "type": ["number", "null"] },
+          "instrument_qty_before": { "type": ["integer", "null"] },
+          "instrument_qty_after": { "type": ["integer", "null"] },
+          "instrument_delta_qty": { "type": ["integer", "null"] },
+          "instrument_avg_cost_before": { "type": ["number", "null"] },
+          "instrument_avg_cost_after": { "type": ["number", "null"] },
+          "realized_pnl_delta": { "type": ["number", "null"] },
+          "portfolio_open_instruments_before": { "type": "integer" },
+          "portfolio_open_instruments_after": { "type": "integer" },
+          "portfolio_gross_qty_before": { "type": "integer" },
+          "portfolio_gross_qty_after": { "type": "integer" },
+          "portfolio_is_flat_before": { "type": "boolean" },
+          "portfolio_is_flat_after": { "type": "boolean" },
+          "change_type": { "type": "string" },
+          "changed_fields": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": [
+          "id",
+          "level",
+          "timestamp",
+          "strategy_id",
+          "portfolio_open_instruments_before",
+          "portfolio_open_instruments_after",
+          "portfolio_gross_qty_before",
+          "portfolio_gross_qty_after",
+          "portfolio_is_flat_before",
+          "portfolio_is_flat_after",
+          "change_type",
+          "changed_fields"
+        ]
+      }
+    },
+
+    "runtime_timing": {
+      "type": "object",
+      "properties": {
+        "cache_server_reachable": { "type": "boolean" },
+        "cache_hit": { "type": "boolean" },
+        "cache_lookup_ms": { "type": "number" },
+        "cache_load_ms": { "type": "number" },
+        "backtest_run_ms": { "type": "number" }
+      }
+    }
+  },
+  "required": [
+    "reproducibility",
+    "simulation",
+    "metrics",
+    "fills",
+    "order_events",
+    "position_events",
+    "post_analysis",
+    "portfolio",
+    "strategy_attribution",
+    "warnings"
+  ]
+}

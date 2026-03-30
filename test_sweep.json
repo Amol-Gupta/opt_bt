@@ -1,0 +1,9 @@
+{
+  "initial_capital": 50000,
+  "start_date": "2023-01-01",
+  "log_level": "info",
+  "param_ranges": {
+    "prob": [0.4, 0.5, 0.6],
+    "qty": [1, 2]
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "bt_strategy_macros"
+version = "0.1.0"
+edition = "2021"
+description = "Procedural macros for registering opt_bt backtest strategies"
+repository = "https://github.com/Amol-Gupta/opt_bt"
+license = "MIT"
+keywords = ["backtest", "options", "trading", "macros"]
+categories = ["finance", "simulation"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

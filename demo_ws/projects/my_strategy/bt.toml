@@ -1,0 +1,23 @@
+[project]
+name = "my_strategy"
+
+[engine]
+path = "../../.."
+bin = "opt_bt"
+
+[run]
+benchmark = "NIFTY 50"
+default_strategy = "algotest_weekly_straddle"
+data = "/quant/nifty_with_options_idx_minus_1min.parquet"
+start_date = "2024-01-01"
+end_date = "2024-12-31"
+log_time_mode = "simulation"
+initial_capital = 500000
+
+[run.params]
+prob = "0.5"
+qty = "65"
+seed = "42"
+
+[strategy_registry]
+stage1_fallback = true

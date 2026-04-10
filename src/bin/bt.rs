@@ -15,10 +15,14 @@ use opt_bt::reporting::json::BacktestReport;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -71,6 +75,11 @@ enum Commands {
         #[command(subcommand)]
         command: DataCommands,
     },
+    #[command(about = "One-time environment setup helpers")]
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -109,6 +118,15 @@ enum ProjectCommands {
     Init(ProjectInitArgs),
 }
 
+#[derive(Subcommand, Debug)]
+enum SetupCommands {
+    #[command(
+        name = "cache-env",
+        about = "Create shared snapshot directory and configure BT_CACHE_SNAPSHOT_DIR"
+    )]
+    CacheEnv(SetupCacheEnvArgs),
+}
+
 #[derive(Args, Debug)]
 struct WorkspaceInitArgs {
     #[arg(long, help = "Workspace root path (defaults to current directory)")]
@@ -133,6 +151,29 @@ struct ProjectInitArgs {
         help = "Overwrite existing project folder"
     )]
     force: bool,
+}
+
+#[derive(Args, Debug)]
+struct SetupCacheEnvArgs {
+    #[arg(
+        long,
+        default_value = "/var/tmp/opt_bt_cache_snapshots",
+        help = "Shared snapshot directory path"
+    )]
+    dir: PathBuf,
+    #[arg(
+        long,
+        help = "Optional Unix group for the snapshot directory (uses chgrp)"
+    )]
+    group: Option<String>,
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Persist BT_CACHE_SNAPSHOT_DIR in shell rc file"
+    )]
+    write_rc: bool,
+    #[arg(long, help = "Shell rc file path (defaults to ~/.bashrc or ~/.zshrc)")]
+    shell_rc: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -416,6 +457,7 @@ impl_display_via_debug!(
     CleanArgs,
     CacheCommands,
     DataCommands,
+    SetupCommands,
     CacheServerArgs,
     CacheWarmArgs,
     CacheStatusArgs,
@@ -424,6 +466,7 @@ impl_display_via_debug!(
     DataIndexArgs,
     DataContractArgs,
     DataSliceArgs,
+    SetupCacheEnvArgs,
     WorkspaceManifest,
     ProjectFile,
     ProjectSection,
@@ -466,7 +509,126 @@ fn run() -> Result<(), DynError> {
             DataCommands::Contract(args) => run_data_contract_cmd(args),
             DataCommands::Slice(args) => run_data_slice_cmd(args),
         },
+        Commands::Setup { command } => match command {
+            SetupCommands::CacheEnv(args) => run_setup_cache_env_cmd(args),
+        },
     }
+}
+
+fn run_setup_cache_env_cmd(args: SetupCacheEnvArgs) -> Result<(), DynError> {
+    let snapshot_dir = args.dir;
+    fs::create_dir_all(&snapshot_dir)?;
+
+    #[cfg(unix)]
+    {
+        let perms = fs::Permissions::from_mode(0o2775);
+        fs::set_permissions(&snapshot_dir, perms)?;
+    }
+
+    if let Some(group) = args.group.as_deref() {
+        let status = Command::new("chgrp")
+            .arg(group)
+            .arg(&snapshot_dir)
+            .status()
+            .map_err(|err| format!("failed to run chgrp: {err}"))?;
+        if !status.success() {
+            return Err(format!(
+                "failed to set group '{}' on {} (try running with sudo)",
+                group,
+                snapshot_dir.display()
+            )
+            .into());
+        }
+    }
+
+    let export_line = format!(
+        "export BT_CACHE_SNAPSHOT_DIR=\"{}\"",
+        snapshot_dir.display()
+    );
+
+    let mut rc_updated = false;
+    let mut rc_path_used: Option<PathBuf> = None;
+    if args.write_rc {
+        let rc_path = resolve_shell_rc_path(args.shell_rc.as_deref())?;
+        upsert_opt_bt_env_block(&rc_path, &export_line)?;
+        rc_updated = true;
+        rc_path_used = Some(rc_path);
+    }
+
+    println!("cache_env_setup=ok");
+    println!("snapshot_dir={}", snapshot_dir.display());
+    println!("snapshot_dir_mode=2775");
+    println!("export_line={}", export_line);
+    if let Some(group) = args.group {
+        println!("group={}", group);
+    }
+    if rc_updated {
+        if let Some(path) = rc_path_used {
+            println!("shell_rc_updated={}", path.display());
+            println!(
+                "next_step=run 'source {}' or open a new shell",
+                path.display()
+            );
+        }
+    } else {
+        println!("shell_rc_updated=false");
+        println!("next_step=add this line to your shell rc: {}", export_line);
+    }
+
+    Ok(())
+}
+
+fn resolve_shell_rc_path(explicit: Option<&Path>) -> Result<PathBuf, DynError> {
+    if let Some(path) = explicit {
+        return Ok(path.to_path_buf());
+    }
+
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| "HOME not set; pass --shell-rc explicitly".to_string())?;
+    let shell = std::env::var("SHELL").unwrap_or_default();
+
+    if shell.contains("zsh") {
+        return Ok(home.join(".zshrc"));
+    }
+
+    Ok(home.join(".bashrc"))
+}
+
+fn upsert_opt_bt_env_block(path: &Path, export_line: &str) -> Result<(), DynError> {
+    let begin = "# >>> opt_bt cache-env >>>";
+    let end = "# <<< opt_bt cache-env <<<";
+    let mut content = if path.exists() {
+        fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+
+    let new_block = format!("{begin}\n{export_line}\n{end}\n");
+
+    if let (Some(start), Some(finish_marker_start)) = (content.find(begin), content.find(end)) {
+        let finish = finish_marker_start + end.len();
+        content.replace_range(start..finish, new_block.trim_end());
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+    } else {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(&new_block);
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(content.as_bytes())?;
+    Ok(())
 }
 
 fn run_cache_server_cmd(args: CacheServerArgs) -> Result<(), DynError> {

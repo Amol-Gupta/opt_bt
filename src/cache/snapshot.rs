@@ -35,15 +35,34 @@ pub struct SnapshotMetadata {
 }
 
 fn snapshot_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("BT_CACHE_SNAPSHOT_DIR") {
+    snapshot_dir_from_parts(
+        std::env::var("BT_CACHE_SNAPSHOT_DIR").ok(),
+        std::env::var("TMPDIR").ok(),
+        std::env::var("USER").ok(),
+    )
+}
+
+fn snapshot_dir_from_parts(
+    snapshot_override: Option<String>,
+    tmpdir: Option<String>,
+    user: Option<String>,
+) -> PathBuf {
+    if let Some(dir) = snapshot_override {
         return PathBuf::from(dir);
     }
 
-    if let Ok(tmpdir) = std::env::var("TMPDIR") {
-        return PathBuf::from(tmpdir).join("opt_bt_cache_snapshots");
+    let base = tmpdir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+
+    if let Some(raw_user) = user {
+        let trimmed = raw_user.trim();
+        if !trimmed.is_empty() {
+            return base.join(format!("opt_bt_cache_snapshots_{trimmed}"));
+        }
     }
 
-    PathBuf::from("/tmp/opt_bt_cache_snapshots")
+    base.join("opt_bt_cache_snapshots")
 }
 
 pub fn write_market_data_snapshot(cache_key: &str, market_data: &MarketData) -> Result<PathBuf> {
@@ -360,5 +379,29 @@ mod tests {
         assert_eq!(loaded.bars_by_time.len(), 0);
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn snapshot_dir_prefers_user_scoped_tmp_by_default() {
+        assert_eq!(
+            snapshot_dir_from_parts(
+                None,
+                Some("/tmp/cache-test-root".to_string()),
+                Some("alice".to_string())
+            ),
+            PathBuf::from("/tmp/cache-test-root/opt_bt_cache_snapshots_alice")
+        );
+    }
+
+    #[test]
+    fn snapshot_dir_honors_explicit_override() {
+        assert_eq!(
+            snapshot_dir_from_parts(
+                Some("/custom/snapshots".to_string()),
+                Some("/tmp/cache-test-root".to_string()),
+                Some("alice".to_string())
+            ),
+            PathBuf::from("/custom/snapshots")
+        );
     }
 }

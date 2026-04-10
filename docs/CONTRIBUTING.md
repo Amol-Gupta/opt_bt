@@ -141,6 +141,7 @@ The following runtime topics are intentionally documented in [USER_GUIDE.md](USE
 
 - binaries and command surface (`bt`, `opt_bt`, project runners)
 - cache server behavior and warm/cold run flow (including `rkyv` snapshot format)
+- shared snapshot environment bootstrap via `bt setup cache-env` (`BT_CACHE_SNAPSHOT_DIR`)
 - `bt data` quick lookup workflows for post-run analysis
 - workspace structure (`.bt/`, `projects/`, `backtests/`)
 - `bt.toml` and `generated/strategy_registry.rs` runtime details

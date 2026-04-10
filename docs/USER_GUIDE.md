@@ -89,6 +89,25 @@ bt <command> --help
   - strategy crate (`strategy/`)
   - generated glue (`generated/`)
 
+#### `bt setup`
+- `bt setup cache-env [--dir <path>] [--group <group>] [--write-rc] [--shell-rc <path>]`
+- One-time helper to configure shared snapshot storage via `BT_CACHE_SNAPSHOT_DIR`.
+- What it does:
+  - creates snapshot directory (default: `/var/tmp/opt_bt_cache_snapshots`)
+  - sets directory mode to `2775` (setgid + group writable)
+  - optionally sets Unix group via `chgrp`
+  - optionally writes an idempotent export block to shell rc when `--write-rc` is provided
+
+Example:
+```bash
+bt setup cache-env \
+  --dir /var/tmp/opt_bt_cache_snapshots \
+  --group quant \
+  --write-rc
+```
+
+If you pass `--write-rc`, open a new shell or run `source ~/.bashrc` (or your selected rc file).
+
 #### `bt run`
 - `bt run --project <name> [options]`
 - Runs a single backtest for a project strategy.
@@ -136,6 +155,69 @@ Cache behavior concept:
 - this is especially useful for repeated parameter sweeps/backtests on the same data
 - cache snapshots are stored in `rkyv` serialized market-data format (`rkyv_market_data_v1`) to reduce restore overhead
 - `bt data` is cache-first and reads from warmed cache snapshots; see the `bt data` section below for dataset resolution order and examples
+- default snapshot location is user-scoped under temp (for example `/tmp/opt_bt_cache_snapshots_<user>`), which avoids cross-user permission collisions on shared machines
+- override snapshot location with `BT_CACHE_SNAPSHOT_DIR` when you need a custom path
+
+#### Dataset ingestion and symbol detection (`bt cache warm`)
+
+`bt cache warm` only preloads/parses parquet and writes a cache snapshot. Instrument typing is done while loading rows:
+
+- Required parquet columns (case-insensitive aliases supported):
+  - symbol: `ticker | symbol | instrument | tradingsymbol`
+  - timestamp: `timestamp | datetime | time | date | ts`
+  - OHLC: `open`, `high`, `low`, `close`
+  - optional: `volume | qty | size`
+- Timestamp values must be either epoch integers (s/ms/us/ns) or RFC3339 strings. A plain string like `2023-01-02 09:16:00` is not parsed by current loader.
+- Option detection is symbol-pattern based:
+  - symbol must end with `CE` or `PE`
+  - format expected: `<UNDERLYING><DD><MON><YY><STRIKE><CE|PE>`
+  - example: `BANKNIFTY26JUN2523000PE`
+- Non-option symbols are kept as plain symbols (internal kind = `Unknown`), and are used as index/spot by exact symbol match in strategies and `bt data index`.
+
+For BANKNIFTY specifically:
+
+- index bars are discovered by whatever index symbol exists in data (commonly `BANKNIFTY` or `NIFTY BANK`)
+- option contracts are discovered only if symbols follow the CE/PE format above
+- when running strategies, set `index_symbol` to the exact index symbol present in your dataset
+
+Quick checks after warming cache:
+
+```bash
+# 1) Warm dataset
+BT_CACHE_ADDR=127.0.0.1:7878 bt cache warm --data /quant/nifty_bank_full.parquet
+
+# 2) Confirm index bars exist
+BT_CACHE_ADDR=127.0.0.1:7878 bt data index \
+  --data /quant/nifty_bank_full.parquet \
+  --symbol BANKNIFTY \
+  --date 2025-06-18
+
+# 3) Confirm an option contract exists (replace symbol with one from your data)
+BT_CACHE_ADDR=127.0.0.1:7878 bt data contract \
+  --data /quant/nifty_bank_full.parquet \
+  --symbol BANKNIFTY26JUN2523000PE \
+  --start-date 2025-06-18 --end-date 2025-06-18 \
+  --start-time 09:20 --end-time 09:25
+```
+
+If step (3) returns `symbol not found`, your parquet does not currently include option rows for that contract symbol.
+
+Optional dataset inspection with the repo's `uv` helper project:
+
+```bash
+cd tools/data_prep_uv
+source .venv/bin/activate
+
+python - <<'PY'
+import polars as pl
+path = "/quant/nifty_bank_full.parquet"
+lf = pl.scan_parquet(path)
+print(lf.group_by("Ticker").len().sort("len", descending=True).head(20).collect())
+print("option_like_rows=", lf.filter(pl.col("Ticker").str.contains(r"(CE|PE)$")).select(pl.len()).collect().item())
+PY
+```
+
+Use this same workflow for any new dataset: warm cache -> verify index symbol -> verify at least one option contract symbol.
 
 #### `bt data`
 - `bt data index [--data <path>] [--project <name>] [--workspace <dir>] --symbol <name> [--date YYYY-MM-DD | --start-date ... --end-date ...] [--minute HH:MM] [--window-minutes N]`

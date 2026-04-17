@@ -125,6 +125,16 @@ fn main() {
         .unwrap_or_else(|err| panic!("{}", err));
     let data = data.unwrap_or_else(|| "./sample_data/niftyIndex2024.sample.parquet".to_string());
 
+    if let Some(path) = report_path.as_deref() {
+        std::env::set_var("BT_REPORT_PATH", path);
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            std::env::set_var("BT_BACKTEST_OUTPUT_DIR", parent);
+        }
+    }
+    if let Some(path) = log_file.as_deref() {
+        std::env::set_var("BT_ENGINE_LOG_PATH", path);
+    }
+
     let params = parse_params(&raw_params).unwrap_or_else(|err| panic!("Failed to parse params: {}", err));
     let merged_params = params
         .iter()

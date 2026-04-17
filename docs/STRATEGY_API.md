@@ -518,6 +518,27 @@ fn on_fill(&mut self, ctx: &mut Context, event: &FillEvent) {
 }
 ```
 
+### Fill Timing Semantics
+
+- `OrderType::Market` currently fills at the close of the bar used for evaluation.
+- If a strategy detects a breakout on the current bar and immediately submits a market order, the fill price will be that same bar's close in the current engine.
+- `OrderType::Limit` fills at the submitted limit price once the bar crosses that level.
+- `OrderType::Stop` fills at the submitted stop price once the bar crosses that level.
+
+This matters when writing tutorials or strategies that say "enter at prevailing price". In the current backtest engine, that phrase should usually be read as "fill at the current evaluation bar close" for market orders.
+
+### Exit-Bar Ambiguity For OHLC Strategies
+
+If a strategy uses bar OHLC data to evaluate both target and stop-loss, a single bar can touch both levels.
+The engine does not impose a universal policy for this ambiguity at the strategy layer. The strategy author should define and document one of these behaviors explicitly:
+
+- Conservative stop-first precedence
+- Favorable target-first precedence
+- Skip exit on ambiguous bars
+- Use lower-timeframe data to disambiguate
+
+For `banknifty_orb_btst`, the strategy uses conservative stop-loss precedence when both levels are touched in the same exit bar.
+
 ---
 
 ## Market Data Access
@@ -529,11 +550,48 @@ Get current bar and price information.
 pub fn get_bar(&self, instrument_id: u32) -> Option<Bar>
 ```
 
+### Important: `get_bar()` Can Return A Stale Option Bar
+
+`Context::get_bar()` returns the latest bar at or before the current simulation timestamp.
+That is often fine for dense index data, but it can be wrong for sparse option datasets where a contract does not print on every minute.
+
+If you are selecting strikes, building a range, or checking breakout conditions for options, prefer exact timestamp access through market data:
+
+```rust
+let now = ctx.now();
+let exact_bar = ctx.market_data.get_bar_at(instrument_id, now);
+```
+
+Use exact bars when:
+
+- selecting a contract based on premium at a specific time
+- building an ORB range from exact timestamps only
+- checking breakout conditions that must be based on the current bar, not the last seen bar
+
+Use `get_bar()` when:
+
+- last known price is acceptable
+- you are intentionally working with carry-forward marks
+- the instrument data is known to be dense enough for your use case
+
 **Example:**
 ```rust
 if let Some(bar) = ctx.get_bar(nifty_id) {
     println!("NIFTY: O={}, H={}, L={}, C={}", 
              bar.open, bar.high, bar.low, bar.close);
+}
+```
+
+**Get Exact Bar At Timestamp:**
+```rust
+pub fn get_bar_at(&self, instrument_id: u32, timestamp: SimTime) -> Option<Bar>
+```
+
+**Example:**
+```rust
+let now = ctx.now();
+if let Some(bar) = ctx.market_data.get_bar_at(option_id, now) {
+    println!("Exact option close at {} is {}", now, bar.close);
 }
 ```
 
@@ -546,6 +604,47 @@ if let Some(bar) = ctx.get_bar(nifty_id) {
 ```rust
 pub fn get_id(&self, symbol: &str) -> Option<u32>
 ```
+
+### Exact Monthly Expiry Selection Example
+
+There is no dedicated `nearest_monthly_expiry()` helper in `Context` today. For monthly-expiry strategies, inspect option metadata and choose the last expiry date available in the nearest future expiry month.
+
+Example pattern:
+
+```rust
+use std::collections::BTreeMap;
+
+fn nearest_monthly_expiry(ctx: &Context, underlying: &str, today: i32) -> Option<i32> {
+    let mut month_to_last_expiry: BTreeMap<(i32, u32), i32> = BTreeMap::new();
+
+    for (instrument_id, _) in ctx.market_data.iter_ids() {
+        let instrument = ctx.market_data.get_instrument(instrument_id)?;
+        let option = instrument.option?;
+
+        if !option.underlying.eq_ignore_ascii_case(underlying) {
+            continue;
+        }
+        if option.expiry_yyyymmdd <= today {
+            continue;
+        }
+
+        let year = option.expiry_yyyymmdd / 10_000;
+        let month = ((option.expiry_yyyymmdd / 100) % 100) as u32;
+        month_to_last_expiry
+            .entry((year, month))
+            .and_modify(|current| {
+                if option.expiry_yyyymmdd > *current {
+                    *current = option.expiry_yyyymmdd;
+                }
+            })
+            .or_insert(option.expiry_yyyymmdd);
+    }
+
+    month_to_last_expiry.into_values().min()
+}
+```
+
+This is the pattern used by `banknifty_orb_btst` for monthly BankNifty options.
 
 ---
 

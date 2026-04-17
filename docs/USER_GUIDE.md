@@ -180,6 +180,33 @@ For BANKNIFTY specifically:
 - option contracts are discovered only if symbols follow the CE/PE format above
 - when running strategies, set `index_symbol` to the exact index symbol present in your dataset
 
+For the verified BANKNIFTY ORB workflow in this repository:
+
+- the dataset `/quant/nifty_bank_full.parquet` uses `BANKNIFTY`
+- `NIFTY BANK` is not present in that dataset
+
+Do not assume the symbol name from another dataset. Always verify with `bt data index` first.
+
+### Sparse option-bar warning
+
+Even when your dataset is nominally 1-minute data, some option contracts may not have a bar on every minute.
+This matters for premium-based contract selection and ORB logic.
+
+Before assuming a contract has a true bar at your decision timestamp, verify it explicitly:
+
+```bash
+BT_CACHE_ADDR=127.0.0.1:7878 bt data contract \
+  --data /quant/nifty_bank_full.parquet \
+  --symbol BANKNIFTY31JAN2450000CE \
+  --start-date 2024-01-03 \
+  --end-date 2024-01-03 \
+  --start-time 09:16 \
+  --end-time 09:20
+```
+
+If the contract prints no row for that minute, a strategy that uses "last seen bar" semantics can silently read stale data.
+For exact-time logic, use exact timestamp bar access in strategy code.
+
 Quick checks after warming cache:
 
 ```bash
@@ -570,6 +597,12 @@ Yes, a single project can expose multiple strategies from its `strategy/` crate.
   - `metrics.benchmark_available`
 - Internal report computation reads `BT_BENCHMARK_SYMBOL` (set automatically by `bt run` / `opt_bt run`).
 
+For BANKNIFTY-only datasets, leaving the benchmark at the default `NIFTY 50` can produce `benchmark_available = false` when that symbol is absent from the dataset.
+When reading reports, check these fields before interpreting alpha, beta, tracking error, information ratio, or Treynor ratio:
+
+- `metrics.benchmark_symbol`
+- `metrics.benchmark_available`
+
 ### Parameter sourcing details
 - Base params come from `[run.params]` in `bt.toml`
 - Environment override comes from `BT_PARAMS` as comma-separated `key=value` tokens
@@ -633,6 +666,27 @@ bt run \
   --strategy my_strategy \
   --data ./sample_data/niftyIndex2024.sample.parquet
 ```
+
+### Artifact inspection workflow
+
+After a run, inspect the latest artifact folder directly instead of guessing where logs and reports landed:
+
+```bash
+latest=$(ls -td projects/my_strategy/backtests/* | head -1)
+echo "$latest"
+
+# Key metrics
+jq '.metrics' "$latest/report.json"
+
+# Fills and order events
+jq '.fills' "$latest/report.json"
+jq '.order_events' "$latest/report.json"
+
+# Strategy logs / phase transitions
+grep -E 'selected|range_finalized|breakout_trigger|entry_fill|exit_fill|no_breakout_close' "$latest/engine.log"
+```
+
+If the strategy writes custom artifacts, they will usually appear in the same folder as `report.json` and `engine.log`.
 
 ### Contract reference
 Detailed stage-1 CLI command contract is documented in:

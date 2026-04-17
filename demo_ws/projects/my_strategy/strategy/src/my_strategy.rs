@@ -1,3 +1,4 @@
+pub mod banknifty_orb_btst;
 pub mod nifty_premium_straddle;
 pub mod nifty_straddle;
 pub mod nifty_straddle_portfolio;
@@ -8,6 +9,7 @@ use opt_bt::common::event::{FillEvent, MarketEvent, OrderEvent, SignalEvent};
 use opt_bt::common::types::PRICE_SCALE;
 use opt_bt::strategy::Strategy;
 
+use banknifty_orb_btst::BankniftyOrbBtstStrategy;
 use nifty_premium_straddle::NiftyPremiumStraddleStrategy;
 use nifty_straddle::AlgotestWeeklyStraddleStrategy;
 use nifty_straddle_portfolio::NiftyStraddlePortfolioStrategy;
@@ -46,6 +48,13 @@ pub fn nifty_straddle_portfolio_registration() {}
     description = "Sell CE/PE whose premium is closest to a target CP on nearest weekly expiry, with configurable entry/exit times and % stop loss"
 )]
 pub fn nifty_premium_straddle_registration() {}
+
+#[bt_strategy(
+    id = "banknifty_orb_btst",
+    display_name = "BankNifty ORB BTST",
+    description = "Long-only BANKNIFTY premium ORB BTST strategy with fixed CE/PE premium selection, three phases, and parameterized target/SL/time windows"
+)]
+pub fn banknifty_orb_btst_registration() {}
 
 #[derive(Debug)]
 pub struct MyStrategy;
@@ -128,6 +137,43 @@ pub fn create_strategy_by_id(
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(100);
     let target_premium = target_premium_rupees * PRICE_SCALE;
+    let closest_premium_value_rupees: i64 = params
+        .get("closest_premium_value")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(200);
+    let closest_premium_value = closest_premium_value_rupees * PRICE_SCALE;
+    let range_start_seconds = params
+        .get("range_start_seconds")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(9 * 3600 + 16 * 60);
+    let range_end_seconds = params
+        .get("range_end_seconds")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(11 * 3600 + 30 * 60);
+    let entry_cutoff_seconds = params
+        .get("entry_cutoff_seconds")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(15 * 3600 + 15 * 60);
+    let day2_exit_seconds = params
+        .get("day2_exit_seconds")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(15 * 3600 + 15 * 60);
+    let target_pct = params
+        .get("target_pct")
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(0.30);
+    let orb_stop_loss_pct = params
+        .get("stop_loss_pct")
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(0.25);
+    let banknifty_index_symbol = params
+        .get("index_symbol")
+        .cloned()
+        .unwrap_or_else(|| "BANKNIFTY".to_string());
+    let banknifty_option_underlying = params
+        .get("option_underlying")
+        .cloned()
+        .unwrap_or_else(|| "BANKNIFTY".to_string());
 
     match strategy_id {
         "my_strategy" => Some(Box::new(MyStrategy)),
@@ -149,6 +195,18 @@ pub fn create_strategy_by_id(
             exit_seconds,
             stop_loss_pct,
             target_premium,
+        ))),
+        "banknifty_orb_btst" => Some(Box::new(BankniftyOrbBtstStrategy::new(
+            &banknifty_index_symbol,
+            &banknifty_option_underlying,
+            quantity,
+            closest_premium_value,
+            range_start_seconds,
+            range_end_seconds,
+            entry_cutoff_seconds,
+            day2_exit_seconds,
+            target_pct,
+            orb_stop_loss_pct,
         ))),
         "nifty_straddle_portfolio" => {
             // Three non-overlapping intraday time windows, all times in IST
